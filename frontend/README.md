@@ -2,7 +2,8 @@
 
 A static site for the OpenVerifiableLLM public record: evidence, releases,
 verification profiles and an inference page. It displays a saved JSON snapshot.
-It has no backend and does not train, sign or run a model.
+It has no backend and does not train, sign or run a model. The project is at
+an early stage and no model has been released yet.
 
 ## Requirements
 
@@ -32,7 +33,7 @@ is invalid rather than an empty or passing state. Choose a pack with
 
 | `?snapshot=` | File | Shows |
 | --- | --- | --- |
-| `public` (default) | `public-snapshot.json` | Draft project status: G01–G02 practice-run checks passed, both models not released, replay not run |
+| `public` (default) | `public-snapshot.json` | Draft project status: early practice-run checks passed, both models not released, replay not run |
 | `missing-parent` | `missing-parent.json` | An evidence item whose parent is not in the record |
 | `superseded` | `superseded.json` | A failed check kept after a later pass |
 | `empty` | `empty-checks.json` | No checks, shown as a data error |
