@@ -1,49 +1,76 @@
 # OpenVerifiableLLM frontend
 
-Static public record. It does **not** train, sign, or chat.
+A static site for the OpenVerifiableLLM public record: evidence, releases,
+verification profiles and an inference page. It displays a saved JSON snapshot.
+It has no backend and does not train, sign or run a model.
 
-Node 20.19+ or 22.12+.
+## Requirements
+
+Node 20.19+ or 22.12+ (required by Vite 7) and npm.
+
+## Commands
 
 ```sh
 cd frontend
-npm install
-npm run dev
-npm run test
+npm ci
+npm run dev        # http://localhost:5173
 npm run typecheck
-npm run build
-npx playwright install chromium   # once
-npm run e2e
+npm test
+npm run build      # writes dist/
+npm run preview    # serves dist/
 ```
 
-Dev: http://localhost:5173 — HashRouter (`/#/evidence`).
+Routing uses `HashRouter` (`/#/evidence`) and `vite.config.ts` sets
+`base: './'`, so the build can be served from any static host or sub-path.
 
-## Snapshot packs
+## Data
 
-The app never scrapes `goal_state.json`. Default load is the public-shaped pack.
+Snapshots live in `src/data/fixtures/`. The app loads one, runs it through
+`validateSnapshot` in `src/data/validate.ts`, and shows a data error page if it
+is invalid rather than an empty or passing state. Choose a pack with
+`?snapshot=`, for example `/#/?snapshot=missing-parent`:
 
-| `?snapshot=` | What it is |
-| --- | --- |
-| *(default)* `public` | Project-shaped fixture (not an approved public snapshot): G01/G02-like PASS, models **not released**, full replay NOT_RUN |
-| `missing-parent` | Test: child names a missing parent |
-| `superseded` | Test: old FAIL stays after a later PASS |
-| `empty` | Test: zero checks — shown as an error |
+| `?snapshot=` | File | Shows |
+| --- | --- | --- |
+| `public` (default) | `public-snapshot.json` | Draft project status: G01–G02 practice-run checks passed, both models not released, replay not run |
+| `missing-parent` | `missing-parent.json` | An evidence item whose parent is not in the record |
+| `superseded` | `superseded.json` | A failed check kept after a later pass |
+| `empty` | `empty-checks.json` | No checks, shown as a data error |
 
-Example: `/#/?snapshot=missing-parent`  
-Test packs are not linked in the public footer.
+All of these are fixtures (`"mode": "fixture"`) and the site shows a banner
+while one is loaded. The default pack is a draft of the current project status
+and has not been approved by the maintainer. `public/data/` is reserved for the
+approved snapshot, which is the only file that should use
+`"mode": "public-snapshot"`.
 
-## This UI will not claim
+## Structure
 
-- Models are available
-- G02 reconstruction, full replay, or independent audit passed
-- `locallyRecomputed` is true
-- A copyable CLI
-- Chat answers come from a released OpenVerifiableLLM model
+- `src/data/contracts.ts`: snapshot types.
+- `src/data/adapters/snapshotAdapter.ts`: loads the selected fixture.
+- `src/data/validate.ts`: checks the snapshot and fails closed.
+- `src/snapshot.tsx`: provides the validated snapshot to the pages.
+- `src/pages/`: Overview, Evidence, Releases, Verify and Inference.
+- `src/content/copy.ts`: shared wording for pipeline stages and the FAQ.
+- `src/inference/`: `DisabledAdapter` and `MockAdapter`. Neither is used by
+  the app yet; the Inference page is a disabled placeholder and `MockAdapter`
+  is only used in tests.
+- `tests/`: Vitest tests for validation, fixture loading, release gating,
+  stage results and the inference adapters.
 
-## Maintainer still needs to provide
+Everything is in `frontend/`. Nothing here touches the pipeline in `src/`,
+`project/` or signing keys.
 
-- Approved public snapshot + git revision (M3)
-- Tested verify commands
-- GitHub Pages `base` path
-- Inference backend after a real release
+## Not done yet
 
-Do not edit `src/` (pipeline), keys, or `project/` from this app.
+- Real project data, once the maintainer approves a public snapshot (M3).
+- An inference preview using `MockAdapter` behind a build flag (M4).
+- Copyable verification commands. The Verify page says instructions are
+  pending until a tested command exists.
+- Browser tests, a frontend CI workflow and deployment (M5).
+
+## Needed from the maintainer
+
+- An approved public snapshot and its source revision.
+- A tested verification command for each profile.
+- Release metadata for the base and chat models when they exist.
+- The hosting target and base path.
