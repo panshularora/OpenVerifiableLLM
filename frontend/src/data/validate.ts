@@ -65,6 +65,13 @@ function asNumberOrNull(value: unknown, field: string): number | null {
   return value;
 }
 
+function asArray(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw new SnapshotError(`${field} must be an array`);
+  }
+  return value;
+}
+
 function asStringList(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new SnapshotError(`${field} must be a list of strings`);
@@ -239,21 +246,21 @@ export function validateSnapshot(raw: unknown): Snapshot {
     );
   }
 
-  const checks = Array.isArray(raw.checks)
-    ? raw.checks.map((item, i) => parseCheck(item, i))
-    : [];
-  const evidence = Array.isArray(raw.evidence)
-    ? raw.evidence.map((item, i) => parseEvidence(item, i))
-    : [];
-  const releases = Array.isArray(raw.releases)
-    ? raw.releases.map((item, i) => parseRelease(item, i))
-    : [];
-  const pipeline = Array.isArray(raw.pipeline)
-    ? raw.pipeline.map((item, i) => parsePipeline(item, i))
-    : [];
-  const commands = Array.isArray(raw.commands)
-    ? raw.commands.map((item, i) => parseCommand(item, i))
-    : [];
+  const checks = asArray(raw.checks, 'checks').map((item, i) =>
+    parseCheck(item, i),
+  );
+  const evidence = asArray(raw.evidence, 'evidence').map((item, i) =>
+    parseEvidence(item, i),
+  );
+  const releases = asArray(raw.releases, 'releases').map((item, i) =>
+    parseRelease(item, i),
+  );
+  const pipeline = asArray(raw.pipeline, 'pipeline').map((item, i) =>
+    parsePipeline(item, i),
+  );
+  const commands = asArray(raw.commands, 'commands').map((item, i) =>
+    parseCommand(item, i),
+  );
 
   if (checks.length === 0) {
     throw new SnapshotError(

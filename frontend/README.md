@@ -1,8 +1,8 @@
 # OpenVerifiableLLM frontend
 
-Static evidence docket. It does **not** train, sign, or talk to a live model.
+Static public record. It does **not** train, sign, or chat.
 
-Requires Node 20+.
+Node 20.19+ or 22.12+.
 
 ```sh
 cd frontend
@@ -11,36 +11,39 @@ npm run dev
 npm run test
 npm run typecheck
 npm run build
+npx playwright install chromium   # once
+npm run e2e
 ```
 
-Open http://localhost:5173 — HashRouter, so routes look like `/#/evidence`.
+Dev: http://localhost:5173 — HashRouter (`/#/evidence`).
 
 ## Snapshot packs
 
-The app never scrapes `goal_state.json`. It loads a frozen JSON pack:
+The app never scrapes `goal_state.json`. Default load is the public-shaped pack.
 
 | `?snapshot=` | What it is |
 | --- | --- |
-| *(default)* `public` | Honest project-shaped snapshot: G01/G02-like PASS, models **not released**, full replay NOT_RUN |
-| `missing-parent` | Fixture: child names a parent that is not in the docket |
-| `superseded` | Fixture: FAIL remains listed after a later PASS |
-| `empty` | Fixture: zero checks — shown as an error, not success |
+| *(default)* `public` | Project-shaped fixture (not an approved public snapshot): G01/G02-like PASS, models **not released**, full replay NOT_RUN |
+| `missing-parent` | Test: child names a missing parent |
+| `superseded` | Test: old FAIL stays after a later PASS |
+| `empty` | Test: zero checks — shown as an error |
 
-Example: `/#/?snapshot=missing-parent`
+Example: `/#/?snapshot=missing-parent`  
+Test packs are not linked in the public footer.
 
-## Claims this UI will not make
+## This UI will not claim
 
 - Models are available
-- Full training replay passed
-- `locallyRecomputed` is true (always false here)
-- Copyable CLI (withheld until a tested command exists)
+- G02 reconstruction, full replay, or independent audit passed
+- `locallyRecomputed` is true
+- A copyable CLI
 - Chat answers come from a released OpenVerifiableLLM model
 
 ## Maintainer still needs to provide
 
-- Approved public snapshot + git revision
+- Approved public snapshot + git revision (M3)
 - Tested verify commands
-- GitHub Pages `base` path / URL
+- GitHub Pages `base` path
 - Inference backend after a real release
 
 Do not edit `src/` (pipeline), keys, or `project/` from this app.

@@ -135,7 +135,7 @@ export const FAQ = [
   },
   {
     q: 'What can I do on this website?',
-    a: 'Read the saved public record and follow links to original files. The Verify page explains what each kind of check would mean. This site does not train, sign, or generate text.',
+    a: 'Read the saved public record and follow links to original files. Listing Wikipedia files (G01) is marked as a practice-run pass. Reconstruction (G02) and later stages remain pending. This site does not train, sign, or generate text.',
   },
   {
     q: 'What is a practice run versus the real run?',

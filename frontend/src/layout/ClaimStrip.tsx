@@ -18,7 +18,9 @@ export function ClaimStrip({ snapshot }: { snapshot: Snapshot }) {
           <p>{snapshot.summary.mayNotClaim.join(' · ')}</p>
         </div>
         <p className="meta">
-          Saved {snapshot.generatedAt} · {revision} · this website did not re-run the checks
+          Saved {snapshot.generatedAt} ·{' '}
+          <a href={snapshot.source.url}>{revision.slice(0, 7)}</a>
+          {' · '}this website did not re-run the checks
         </p>
       </div>
     </div>

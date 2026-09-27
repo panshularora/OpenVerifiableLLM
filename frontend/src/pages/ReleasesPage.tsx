@@ -47,9 +47,20 @@ export function ReleasesPage() {
                 </p>
               </details>
               <p>
-                <button type="button" disabled={!ready}>
-                  Download
-                </button>{' '}
+                {ready && release.repository ? (
+                  <a
+                    className="btn"
+                    href={release.repository}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download
+                  </a>
+                ) : (
+                  <button type="button" disabled>
+                    Download
+                  </button>
+                )}{' '}
                 <button type="button" disabled>
                   Generate
                 </button>

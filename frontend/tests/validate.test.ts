@@ -42,6 +42,12 @@ describe('validateSnapshot', () => {
     raw.source = { ...(raw.source as object), url: 'javascript:alert(1)' };
     expect(() => validateSnapshot(raw)).toThrow(/disallowed scheme/);
   });
+
+  it('rejects non-array collection fields', () => {
+    const raw = structuredClone(publicSnapshot) as Record<string, unknown>;
+    raw.evidence = 'invalid';
+    expect(() => validateSnapshot(raw)).toThrow(/evidence must be an array/);
+  });
 });
 
 describe('loadSnapshot', () => {

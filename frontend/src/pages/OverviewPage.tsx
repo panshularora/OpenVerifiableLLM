@@ -23,14 +23,14 @@ export function OverviewPage() {
             reproducible. This site shows the record; it does not train or chat.
           </p>
           <p className="actions">
-            <Link className="btn btn-gold" to={`/evidence${search}`}>
-              Evidence
+            <Link className="btn btn-solid" to={`/evidence${search}`}>
+              Explore evidence
+            </Link>
+            <Link className="btn btn-ghost" to={`/releases${search}`}>
+              View releases
             </Link>
             <Link className="btn btn-ghost" to={`/verify${search}`}>
-              Verification
-            </Link>
-            <Link className="btn btn-ghost" to={`/try${search}`}>
-              Inference
+              How verification works
             </Link>
           </p>
         </div>
@@ -55,6 +55,12 @@ export function OverviewPage() {
               <span>releases</span>
             </div>
           </div>
+          <p className="step-meta" style={{ marginTop: '0.85rem' }}>
+            Record {snapshot.generatedAt} ·{' '}
+            <a href={snapshot.source.url}>
+              {(snapshot.source.revision ?? 'source').slice(0, 7)}
+            </a>
+          </p>
         </aside>
       </div>
 

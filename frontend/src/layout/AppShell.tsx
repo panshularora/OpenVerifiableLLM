@@ -18,7 +18,14 @@ export function AppShell() {
 
   return (
     <>
-      <a className="skip" href="#main">
+      <a
+        className="skip"
+        href="#main"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById('main')?.focus();
+        }}
+      >
         Skip to content
       </a>
       <header className="mast">
@@ -43,7 +50,7 @@ export function AppShell() {
 
       {snapshot ? <ClaimStrip snapshot={snapshot} /> : null}
 
-      <main id="main" className="page">
+      <main id="main" className="page" tabIndex={-1}>
         {error ? (
           <section>
             <p className="kicker">Data error</p>
@@ -64,15 +71,17 @@ export function AppShell() {
             <strong>OpenVerifiableLLM</strong> is an AOSSIE project. This website shows a saved
             public record. It does not train models, sign files, or chat.
           </p>
-          <p className="packs">
-            Snapshot packs:{' '}
-            {SNAPSHOT_IDS.map((item) => (
-              <a key={item} href={`#/?snapshot=${item}`}>
-                {item}
-                {item === id ? ' (current)' : ''}
-              </a>
-            ))}
-          </p>
+          {snapshot?.mode === 'fixture' ? (
+            <p className="packs">
+              Test packs:{' '}
+              {SNAPSHOT_IDS.map((item) => (
+                <a key={item} href={`#/?snapshot=${item}`}>
+                  {item}
+                  {item === id ? ' (current)' : ''}
+                </a>
+              ))}
+            </p>
+          ) : null}
           <p>
             <a href="https://github.com/AOSSIE-Org/OpenVerifiableLLM">GitHub</a>
             {' · '}
@@ -81,8 +90,6 @@ export function AppShell() {
             </a>
             {' · '}
             <a href="https://aossie.org">aossie.org</a>
-            {' · '}
-            <a href="https://discord.gg/hjUhu33uAn">Discord</a>
           </p>
         </div>
       </footer>

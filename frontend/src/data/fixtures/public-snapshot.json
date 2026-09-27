@@ -11,7 +11,7 @@
   "summary": {
     "headline": "OpenVerifiableLLM keeps a public record of a small language model’s data, training, checkpoints, and released files so other people can inspect and later reproduce them. The models are not released yet.",
     "mayClaim": [
-      "The project team listed and downloaded the Wikipedia files for a practice run (G01–G02)"
+      "The project team listed the Wikipedia files for a practice run (G01)"
     ],
     "mayNotClaim": [
       "that a model is available to download or chat with",
@@ -19,7 +19,7 @@
       "that someone outside the team has independently rebuilt it",
       "that generated answers are true"
     ],
-    "workflow": "The team has listed and fetched the Wikipedia files for a practice run (G01–G02). Training, a full re-run, and both models are not done yet."
+    "workflow": "G01 (listing Wikipedia files) is recorded as passed on a practice run. G02–G10 and both models remain pending."
   },
   "pipeline": [
     {
@@ -34,7 +34,7 @@
       "id": "wiki-acquire",
       "title": "Download those Wikipedia files",
       "phase": "source",
-      "result": "PASS",
+      "result": "NOT_RUN",
       "scope": "pilot",
       "checkId": "chk-g02"
     },
@@ -144,10 +144,10 @@
       "profile": "data-reconstruction",
       "phase": "source",
       "scope": "pilot",
-      "result": "PASS",
-      "explanation": "The team says the Wikipedia files used in the practice run are stored in a public archive. Someone outside the team has not yet rebuilt that from scratch.",
-      "performedBy": "project-operator",
-      "attestedBy": "project-operator",
+      "result": "NOT_RUN",
+      "explanation": "The public evidence dataset still lists G02 as pending. This site does not treat dump reconstruction as passed.",
+      "performedBy": null,
+      "attestedBy": null,
       "locallyRecomputed": false,
       "evidence": [
         {
@@ -207,11 +207,11 @@
     },
     {
       "id": "ev-pr-101",
-      "title": "Training-pipeline work on GitHub (pull request 101)",
+      "title": "Training-pipeline work on GitHub (pull request 101, merged)",
       "kind": "report",
       "phase": "source",
       "scope": "pilot",
-      "result": "PASS",
+      "result": "NOT_RUN",
       "checkId": "chk-g02",
       "source": {
         "url": "https://github.com/AOSSIE-Org/OpenVerifiableLLM/pull/101",
