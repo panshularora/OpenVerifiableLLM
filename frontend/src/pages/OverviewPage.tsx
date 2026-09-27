@@ -40,15 +40,15 @@ export function OverviewPage() {
           <div className="stats">
             <div className="stat">
               <strong>{pass}</strong>
-              <span>passed</span>
+              <span>checks passed</span>
             </div>
             <div className="stat">
               <strong>{fail}</strong>
-              <span>failed</span>
+              <span>checks failed</span>
             </div>
             <div className="stat">
               <strong>{pending}</strong>
-              <span>pending</span>
+              <span>checks pending</span>
             </div>
             <div className="stat">
               <strong>{released}</strong>
@@ -61,6 +61,7 @@ export function OverviewPage() {
               {(snapshot.source.revision ?? 'source').slice(0, 7)}
             </a>
           </p>
+          <p className="step-meta">Check counts are separate from the pipeline stages below.</p>
         </aside>
       </div>
 
