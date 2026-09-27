@@ -134,7 +134,7 @@ Five routes. Nothing else in v1.
 | `/evidence/:id` | One object: digest, parents, children, original link |
 | `/releases` | Base card + chat card, both gated until real metadata |
 | `/verify` | Five verification *profiles*, not a magic button |
-| `/try` | Inference shell. Public: disabled. Fixture preview: labelled mock |
+| `/try` | Inference shell. Public: disabled. Mock preview planned for M4 |
 
 Nav: Overview · Evidence · Releases · Verify · Try  
 Footer: AOSSIE, GitHub, Hugging Face evidence dataset, snapshot time, “this is
@@ -271,7 +271,8 @@ Public build:
 - Banner: **Generation is unavailable until a verified model release is connected**
 - No silent fallback to GPT / Gemini / “any Ollama model”
 
-Fixture / preview build (`?fixture=1` or a documented env flag):
+Mock preview (planned for milestone 4, not wired up yet; `MockAdapter` is
+only used in tests today):
 
 - Mock adapter only
 - Every response carries a visible, sticky label:  
