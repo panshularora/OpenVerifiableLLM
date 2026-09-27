@@ -45,7 +45,11 @@ export function AppShell() {
       </header>
 
       {snapshot?.mode === 'fixture' ? (
-        <p className="tape">Test data — not the real project status</p>
+        <p className="tape">
+          {id === 'public'
+            ? 'Draft status — waiting for maintainer approval'
+            : 'Test data — not the real project status'}
+        </p>
       ) : null}
 
       {snapshot ? <ClaimStrip snapshot={snapshot} /> : null}

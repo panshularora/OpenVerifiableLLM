@@ -6,9 +6,9 @@ import emptyChecks from '../src/data/fixtures/empty-checks.json';
 import publicSnapshot from '../src/data/fixtures/public-snapshot.json';
 
 describe('validateSnapshot', () => {
-  it('accepts the public unreleased snapshot', () => {
+  it('accepts the unreleased draft snapshot as fixture data', () => {
     const snap = validateSnapshot(publicSnapshot);
-    expect(snap.mode).toBe('public-snapshot');
+    expect(snap.mode).toBe('fixture');
     expect(snap.releases.every((item) => item.availability === 'not-released')).toBe(
       true,
     );

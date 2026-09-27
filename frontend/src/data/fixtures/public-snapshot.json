@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ovllm.frontend.snapshot.v1",
   "generatedAt": "2026-09-19T12:00:00Z",
-  "mode": "public-snapshot",
+  "mode": "fixture",
   "source": {
     "url": "https://github.com/AOSSIE-Org/OpenVerifiableLLM",
     "revision": "03551ddedf9e54ae4355cf7e3f85c83c27e5f971",
