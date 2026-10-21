@@ -511,12 +511,18 @@ def verify_segment(data, run, chain, k):
     return ok
 
 
+def verdict(checks):
+    if not checks:
+        sys.exit("verify: no checks ran")
+    return "PASS" if all(c.get("match", c.get("initialization")) for c in checks) else "FAIL"
+
+
 def cmd_verify(a):
     run = Path(a.run)
-    if not a.data and not a.weights:
-        sys.exit("verify: nothing to check, pass --data and/or --weights")
     chain = read_chain(run)
-    report = {"time": time.time(), "environment": environment(), "chain_head": chain[-1]["state"], "checks": []}
+    report = {"time": time.time(), "environment": environment(), "chain_head": chain[-1]["state"],
+              "checks": [{"chain_entries": len(chain), "match": True}]}  # read_chain exits on a broken link
+    print(f"chain: MATCH ({len(chain)} entries linked)", flush=True)
     if a.data and chain[0]["data"] != {p: hashlib.sha256((Path(a.data) / p / "stream.json").read_bytes()).hexdigest()
                                        for p in ("wikipedia", "conversation")}:
         sys.exit("prepared data differs from the data the chain trained on")
@@ -540,7 +546,7 @@ def cmd_verify(a):
             segments = list(segments) + [pool.pop(secrets.randbelow(len(pool))) for _ in range(min(a.random, len(pool)))]
         for k in sorted(segments):
             report["checks"].append({"segment": [k, k + 1], "match": verify_segment(a.data, run, chain, k)})
-    report["result"] = "PASS" if all(c.get("match", c.get("initialization")) for c in report["checks"]) else "FAIL"
+    report["result"] = verdict(report["checks"])
     with (run / "verifications.jsonl").open("a") as f:
         f.write(json.dumps(report, sort_keys=True) + "\n")
     print(f"verify {report['result']}: {len(report['checks'])} checks; "

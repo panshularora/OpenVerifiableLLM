@@ -177,8 +177,8 @@ class WeightsMatchTests(unittest.TestCase):
         return json.loads((self.run / "verifications.jsonl").read_text().splitlines()[-1])
 
     def test_final_and_base_weights_match_their_entries(self):
-        self.assertEqual(self.verify(self.states[3])["checks"][0]["chain_entry"], 3)
-        self.assertEqual(self.verify(self.states[2])["checks"][0]["chain_entry"], 2)
+        self.assertEqual(self.verify(self.states[3])["checks"][1]["chain_entry"], 3)
+        self.assertEqual(self.verify(self.states[2])["checks"][1]["chain_entry"], 2)
 
     def test_progress_weights_are_not_a_released_model(self):
         with self.assertRaises(SystemExit):
@@ -191,13 +191,31 @@ class WeightsMatchTests(unittest.TestCase):
             self.verify(sd)
         report = json.loads((self.run / "verifications.jsonl").read_text().splitlines()[-1])
         self.assertEqual(report["result"], "FAIL")
-        self.assertIsNone(report["checks"][0]["chain_entry"])
+        self.assertIsNone(report["checks"][1]["chain_entry"])
 
-    def test_nothing_to_check_fails_without_a_record(self):
+    def run_only(self):
         a = argparse.Namespace(run=str(self.run), data=None, weights=None, segment=None, random=0, all=False)
-        with self.assertRaisesRegex(SystemExit, "nothing to check"):
-            ovl.cmd_verify(a)
+        ovl.cmd_verify(a)
+        return json.loads((self.run / "verifications.jsonl").read_text().splitlines()[-1])
+
+    def test_run_alone_records_the_chain_check(self):
+        report = self.run_only()
+        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(report["checks"], [{"chain_entries": 4, "match": True}])
+
+    def test_run_alone_fails_on_a_tampered_chain(self):
+        chain = ovl.read_chain(self.run)
+        chain[1]["model"] = "0" * 64
+        write_chain(self.run, chain)
+        with self.assertRaisesRegex(SystemExit, "chain link broken"):
+            self.run_only()
         self.assertFalse((self.run / "verifications.jsonl").exists())
+
+    def test_zero_checks_is_never_pass(self):
+        with self.assertRaisesRegex(SystemExit, "no checks ran"):
+            ovl.verdict([])
+        self.assertEqual(ovl.verdict([{"chain_entries": 4, "match": True}]), "PASS")
+        self.assertEqual(ovl.verdict([{"chain_entries": 4, "match": True}, {"initialization": False}]), "FAIL")
 
 
 if __name__ == "__main__":
