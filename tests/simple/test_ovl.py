@@ -193,6 +193,12 @@ class WeightsMatchTests(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertIsNone(report["checks"][0]["chain_entry"])
 
+    def test_nothing_to_check_fails_without_a_record(self):
+        a = argparse.Namespace(run=str(self.run), data=None, weights=None, segment=None, random=0, all=False)
+        with self.assertRaisesRegex(SystemExit, "nothing to check"):
+            ovl.cmd_verify(a)
+        self.assertFalse((self.run / "verifications.jsonl").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

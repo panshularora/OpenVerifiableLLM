@@ -513,6 +513,8 @@ def verify_segment(data, run, chain, k):
 
 def cmd_verify(a):
     run = Path(a.run)
+    if not a.data and not a.weights:
+        sys.exit("verify: nothing to check, pass --data and/or --weights")
     chain = read_chain(run)
     report = {"time": time.time(), "environment": environment(), "chain_head": chain[-1]["state"], "checks": []}
     if a.data and chain[0]["data"] != {p: hashlib.sha256((Path(a.data) / p / "stream.json").read_bytes()).hexdigest()
