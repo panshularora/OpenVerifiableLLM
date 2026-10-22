@@ -1,230 +1,223 @@
-# OpenVerifiableLLM frontend: plan
+# OpenVerifiableLLM frontend: my plan
 
-Status: draft for Panshul to review, then share with rajat (ryoari) and adi (AdityasagarR123) before coding.
+This is exactly what I will build and how. It builds on [#122's data layer](https://github.com/AOSSIE-Org/OpenVerifiableLLM/pull/122) (lean dependencies, `contracts.ts` / `validate.ts`) and brings over [#178's Playwright and accessibility tests](https://github.com/AOSSIE-Org/OpenVerifiableLLM/pull/178). Every number below was checked against the real `release/simple-run/` files.
 
-## Summary for rajat
+## 1. Goals and non-goals
 
-Rule: **every page answers one question.** If a page can't say its question in one sentence, it doesn't ship.
-
-| Page | Route | The one question |
-|---|---|---|
-| Overview | `/` | What was trained, and is the evidence intact? |
-| Chain | `/chain` | Is the training record unbroken, entry by entry? |
-| Verify it yourself | `/verify` | How do I check this without trusting you? |
-| Hardware map | `/hardware` | On which hardware do the bits reproduce? |
-| Data | `/data` | Exactly which files and data went in, and what's covered? |
-| Anchor | `/anchor` | When was this release fixed, and how do I check the timestamp? |
-| Segments, Runs (second wave) | `/segments`, `/runs` | Which segments were recomputed? What other runs exist? |
-
-Base: #122 (Panshul, `feat/frontend-overview`): its structure, lean dependencies and `contracts.ts`/`validate.ts` layer. Ported from #178 (adi, `feat/frontend-evidence-explorer`): Playwright, axe, the evidence list/detail views, the bounded loader. Dropped: globe, scroll animation, spotlight cards. One joint PR, adi credited as co-author.
-
-## 1. Goal
-
-A public evidence site for OpenVerifiableLLM releases. Someone who lands on it should be able to answer, without trusting us:
-
-1. What was released, and what exactly is it (model, data, code, recipe)?
-2. What has been checked, by whom, on what hardware, and with what result?
+Goal: a public evidence site for each OpenVerifiableLLM release. A visitor should be able to answer, without trusting the project:
+1. What was released (model, data, code, recipe)?
+2. What has been checked, on what hardware, with what result?
 3. What is still unchecked or unknown?
 4. How do I check it myself?
 
-It is a record, not a showcase. No globe, no scroll animations, no 3D. Every page answers one of the four questions above, or it doesn't ship.
+Rule: every page answers one question, written as its lede. If a page can't state its question in one sentence, it doesn't ship.
 
-## 2. Ground rules (from rajat's message)
+Non-goals (v1): no globe, scroll animation, spotlight cards, 3D, or hero motion; no framer-motion, Tailwind, zod; no committed screenshots; no chat/inference page (inference stays as #122's `DisabledAdapter`); no fetching `.pt` files; no server or database; no accounts; no parsing of `.tsr` files in the browser.
 
-- Build on #122's structure: lean dependencies, plus the `contracts.ts` / `validate.ts` layer that checks data before rendering.
-- Bring over from #178: Playwright end-to-end tests, accessibility tests (axe), and its best views.
-- Drop from #178: `globe.tsx`, `container-scroll-animation.tsx`, `spotlight-card.tsx`, framer-motion, committed screenshots.
-- Real release data, not fixtures. Fixtures stay only for tests (tampered chain, missing file, mismatch).
-- One joint PR, with adi credited as co-author (`Co-authored-by:` on the commits that carry his work).
-- "AOSSIE" footer on every page.
+## 2. Pages and routes
 
-## 3. Data source: the real release layout
-
-Location: Hugging Face dataset `AOSSIE/openverifiable-enwiki-20260901-20260918-r1-evidence`, under `release/<run>/`. Today there are two runs: `simple-run` and `unlearning-3i-atlas`.
-
-| File | What it holds | Used by |
+| Page | Route | The one question |
 |---|---|---|
-| `anchor.json` (`schema: ovl.release-anchor.v1`) | chain head index and sha256, chain/hashes file sha256, final model and state digests, code commit, dataset | Overview, Verify |
-| `anchor.digicert.tsr`, `anchor.freetsa.tsr` | RFC 3161 timestamps over `anchor.json` (6,007 and 4,644 bytes) | Anchor, Verify |
-| `chain.jsonl` | 38 entries: `index`, `kind` (simple-run counts: 1 initial, 30 progress, 1 base, 3 transition, 2 epoch, 1 final; fork entries in the unlearning run), `control` (phase, global_step, epoch, pos), `model`, `state`, `previous`, `time`; entry 0 also has `data`, `environment`, `recipe` | Chain page |
-| `verifications.jsonl` | per-segment results: `checker`, `code`, `gpu`, `driver`, `result`, `segment` | Overview, Segments |
-| `hardware-map.jsonl` | per hardware: `segment`, `result`, `hardware`, `driver`, `software`, `note` | Hardware page |
-| `recipe.json` | model shape, schedule, seed, batch, boundary_every | Overview, Recipe |
-| `release-hashes.txt` | sha256 of every file | Data page |
-| `README.md` | walkthrough | linked, not re-rendered |
+| Overview | `/r/:run/` | What was trained, and is the evidence intact? |
+| Chain | `/r/:run/chain` (`/chain/:index`) | Is the training record unbroken, entry by entry? |
+| Verify it yourself | `/r/:run/verify` | How do I check this without trusting the site? |
+| Hardware | `/r/:run/hardware` | On which hardware do the bits reproduce? |
+| Files and data | `/r/:run/data` | Which bytes are official, and which data went in? |
+| Anchor | `/r/:run/anchor` | When was this release fixed, and how do I check that? |
+| Segments (second wave) | `/r/:run/segments` | Was every segment re-run, and by whom? |
+| Runs (second wave) | `/runs` | What other runs exist? |
 
-Loading: the browser fetches only these small files (all under 20 KB) over the HF `resolve/` URLs, pinned to a dataset revision. It never fetches the `.pt` files. A build-time script can also snapshot them into `public/data/<run>/`, so the site works offline and in tests.
+`/` redirects to the latest run in `runs.ts`. Every page shows a run switcher and the pinned dataset revision.
 
-Contracts: one TypeScript type and one validator per file, in `src/data/contracts.ts` and `validate.ts`, following #122's pattern. If a file fails validation, the page shows "this file doesn't match the expected format" with the field name. It never renders partial data silently.
+## 3. Data sources and contracts
 
-Open question for rajat: the format `ovl.py verify` writes to `verifications.jsonl` differs from the published lines. Which one is canonical? The adapter should accept the published one now and add the other once he answers.
+Source: Hugging Face dataset `AOSSIE/openverifiable-enwiki-20260901-20260918-r1-evidence`, folder `release/<run>/` (runs today: `simple-run`, `unlearning-3i-atlas`). The browser reads only small text files (each < 20 KB), at a pinned revision via `resolve/<revision>/`. A build script (`scripts/snapshot.mjs`) also copies them into `public/data/<run>/` and records their sha256, so the site and CI work offline. The page always cites the HF URL as the source.
 
-## 4. Pages
+Every page reads through one adapter: `loadRelease(run) -> Release`. Validators are hand-written type guards (the #122 pattern) that throw `ReleaseFileError { file, fieldPath, reason }`. A file that fails validation produces an error state for that file; partial data is never shown silently.
 
-Each page's question is its lede. Every number on a page comes from a validated release file; nothing is hardcoded. Status colour is always paired with a word and an icon (MATCH / MISMATCH / NOT CHECKED).
+Loader rules (from #178's `load.ts`): only same-origin or allow-listed HF `resolve/<revision>/` URLs; `credentials: 'omit'`; 1 MB cap per file; fatal UTF-8 decoding; 10 s timeout.
 
-1. **Overview (`/`)**: "What was trained, and is the evidence intact?"
-   - Verdict banner computed in the browser: chain links OK (38/38), head equals `anchor.json.chain_head_sha256`, sha256 of the fetched `chain.jsonl` equals `anchor.json.chain_jsonl_sha256` and its line in `release-hashes.txt`, segments MATCH 37/37 from `verifications.jsonl`. Any failed check turns the banner red and names the check.
-   - Release name (`dataset`, `path`), dataset `commit`, training start/end (chain entry 0 and 37 `time`, shown as UTC), anchor time (from the `.tsr` files, not `anchor.json`; 2026-10-20 14:38:43 UTC per the release README), final model digest `final_model`, recipe summary (6 layers, 384 dim, seed 1234).
-   - Honest result line: all 46 rows of `verifications.jsonl` are MATCH. The only MISMATCH rows in the release are in `hardware-map.jsonl` (segment 32 on RTX 4090, H100 and x86 CPU); the Overview says these are the expected cross-architecture divergence, not a failed check, and links to the Hardware page.
-   - Honest scope line: who checked ("project second pod" for all 46 lines today; independent checks 0 beyond the fresh-machine re-run of segment 21).
-2. **Chain (`/chain`)**: "Is the training record unbroken, entry by entry?"
-   - Table of 38 rows: `index`, `kind`, `control.phase`, `control.global_step`, short `previous`, computed own hash (sha256 of `json.dumps(entry, sort_keys=True)`, the rule in `simple/ovl.py` `read_chain`), and a link icon that is green only when row *i*'s `previous` equals row *i−1*'s computed hash.
-   - Each row has an anchor (`/chain#37`) and clicking it opens the raw JSON for that entry (a `<details>` block, no modal). Entry 0 additionally shows `data`, `environment`, `recipe`.
-   - Canonicalisation note: Python's `json.dumps` default separators (`", "`, `": "`) and float repr must be reproduced exactly; we recompute from the raw line where possible and test against all 38 published hashes.
-3. **Verify it yourself (`/verify`)**: "How do I check this without trusting you?" Three tiers, each with prerequisites, the exact command, expected output and a copy button:
-   - No GPU: hash links, seed re-generation, file hashes against `release-hashes.txt` (`sha256sum -c`).
-   - Timestamp: the two `openssl ts -verify` commands from the release README; expected `Verification: OK`.
-   - GPU (RTX 5090, image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`): `bash code/simple/verify_segment.sh`, `K=3 …`, `SEGMENTS="7 8" …`; expected `MATCH`/`MISMATCH` per segment, ~20 min each. Shows the catch probability 1 − ((N−1)/N)^M with N = 37.
-4. **Hardware map (`/hardware`)**: "On which hardware do the bits reproduce?" A matrix from `hardware-map.jsonl`: hardware × driver × software → result, with the `note`. MISMATCH rows (segment 32 on RTX 4090, H100, CPU) are shown plainly, not hidden, with the copy: "Expected: other GPU architectures run different low-level kernels, so bits differ. This is not evidence of tampering." A sentence states the trust assumption: bit-exact checks need an RTX 5090; drivers 570.195.03 and 595.91.07 agree.
-5. **Data (`/data`)**: "Exactly which files and data went in, and what's covered?" The `release-hashes.txt` table (file, sha256, link to HF, size from the HF tree API), the prepared-data ID and the data digests in chain entry 0 (`data.wikipedia`, `data.conversation`), the rebuild-from-raw result, and coverage: which segments were checked, and for the unlearning run, the excluded article and the shared range 0–30.
-6. **Anchor (`/anchor`)**: "When was this release fixed, and how do I check the timestamp?" Renders `anchor.json` field by field (it has no timestamp field of its own: `schema`, `dataset`, `path`, `commit`, `chain_entries`, `chain_head_index`, `chain_head_sha256`, `chain_jsonl_sha256`, `release_hashes_sha256`, `final_model`, `final_state`). The RFC 3161 proofs are the separate files `anchor.digicert.tsr` and `anchor.freetsa.tsr`; the page lists both `.tsr` files with the TSA names, and shows the verify commands. States clearly: a timestamp proves the release existed unchanged by that time, not when training happened. (Parsing the `.tsr` genTime in the browser is optional; a build-time step can extract it with `openssl ts -reply -text`.)
-
-Second wave, after the six above are reviewed: **Segments (`/segments`)** (37-cell grid plus the verifications table) and **Runs (`/runs`)** (`simple-run`, `unlearning-3i-atlas`, later releases). All pages take a `:run` prefix (`/r/:run/chain`) so a new run reuses them.
-
-Not in scope now: Try / chat page. Inference stays as #122's `DisabledAdapter` until rajat wants it.
-
-## 5. Data contracts
-
-One adapter, every page reads through it: `loadRelease(run) → Release`, built on #122's `contracts.ts` + `validate.ts` pattern (hand-written type guards that throw `SnapshotError` with the field path; no zod, to keep deps lean). Validation runs once per run; a failed file produces a per-file error state, never partial data.
-
-| File | Contract (required fields) | Checks beyond shape |
+| File | Required fields (verified in the real files) | Validation beyond shape |
 |---|---|---|
-| `anchor.json` | `schema === "ovl.release-anchor.v1"`, `chain_entries` int, `chain_head_index` int, `chain_head_sha256`, `chain_jsonl_sha256`, `release_hashes_sha256`, `final_model`, `final_state` (64-hex), `commit` (40-hex), `dataset`, `path` | `chain_head_index === chain_entries − 1`; unknown schema id → "unsupported schema" error |
-| `chain.jsonl` | per line: `index` int, `kind` ∈ {initial, progress, base, transition, epoch, final, + fork kinds}, `previous` 64-hex or null (only index 0), `model`, `state` 64-hex, `time` number, `control` {`phase`, `global_step`, `epoch`, `phase_step`, `cursor`, `pos`[2], `batches`}; index 0 also `data`, `environment`, `recipe` | index contiguous from 0; every `previous` link; head hash vs anchor; last `model`/`state` vs anchor `final_model`/`final_state`; file sha256 vs anchor |
-| `verifications.jsonl` | `segment` int, `result` ∈ {MATCH, MISMATCH}, `checker`, `code`, `gpu`, `driver` | segment in 0..N−2; duplicates allowed (multiple checkers), aggregated per segment |
-| `hardware-map.jsonl` | `segment` int or string (e.g. `"all 37"`), `result`, `hardware`, `driver`, `software`, `note` | keep string segments as labels, don't coerce |
-| `release-hashes.txt` | lines `<64-hex>␠␠<path>` | file's own sha256 vs anchor `release_hashes_sha256`; `chain.jsonl` line equals anchor |
-| `recipe.json` | `model` {…}, `schedule` {…}, `seed`, `batch_size`, `context`, `boundary_every` | sha256 of canonical JSON vs chain entry 0 `recipe` |
-| `*.tsr` | binary, size-limited | not parsed in v1; linked + verify command |
+| `anchor.json` | `schema` = `"ovl.release-anchor.v1"`, `dataset`, `path`, `commit` (40-hex), `chain_entries` (38), `chain_head_index` (37), `chain_head_sha256`, `chain_jsonl_sha256`, `release_hashes_sha256`, `final_model`, `final_state` (64-hex). No timestamp field. | `chain_head_index == chain_entries - 1`; unknown schema → "unsupported schema" error |
+| `chain.jsonl` | Per line: `index`, `kind` (simple-run: initial 1, progress 30, transition 3, epoch 2, base 1, final 1; fork kinds in the unlearning run), `previous` (64-hex, `null` only at index 0), `model`, `state`, `time` (unix float), `control {batches, cursor, epoch, global_step, phase, phase_step, pos[2]}`. Entry 0 also has `data {wikipedia, conversation}`, `environment {gpu, cuda, cudnn, torch, cublas_workspace}`, `recipe`. | `index` contiguous from 0; every `previous` link; line count == `chain_entries`; head hash == `chain_head_sha256`; last `model`/`state` == `final_model`/`final_state`; file sha256 == `chain_jsonl_sha256` |
+| `verifications.jsonl` | `segment` (int), `result` ∈ {MATCH, MISMATCH}, `checker`, `code` (e.g. `ovl.py 202ac6ce`), `gpu`, `driver`. Real file: 46 rows, all MATCH; checkers: "project second pod" 37, "project training pod" 8, "project fresh machine public files only" 1. | `segment` in 0..chain_entries−2; duplicate segments allowed and aggregated |
+| `hardware-map.jsonl` | `segment` (int or string, e.g. `"all 37"`), `result`, `hardware`, `driver`, `software`, `note`. Real file: 5 rows; segment 32 MATCH on RTX 5090, MISMATCH on RTX 4090, H100, x86_64 CPU; `"all 37"` MATCH on RTX 5090. | string segments kept as labels, never coerced |
+| `release-hashes.txt` | 42 lines `<64-hex>  <path>` (sha256sum format) | own sha256 == `release_hashes_sha256`; its `chain.jsonl` line == `chain_jsonl_sha256` |
+| `recipe.json` | `batch_size` 32, `boundary_every` 18080, `context` 512, `conversation_epochs` 3, `init`, `model {attn_impl, dropout, embed_dim 384, max_seq_len 512, num_heads 6, num_layers 6, vocab_size 32000}`, `schedule {conversation, floor, peak, warmup, wikipedia_updates}`, `seed` 1234, `weight_decay` | its sha256 under the Python canonical form == chain entry 0 `recipe` (shown as PENDING if the canonical form is not confirmed) |
+| `anchor.digicert.tsr`, `anchor.freetsa.tsr` | binary, linked only | listed in `release-hashes.txt` if present there; size shown |
+| `README.md` | linked, not re-rendered | — |
 
-Loader rules taken from #178's `src/data/load.ts`: same-origin or allow-listed HF `resolve/<revision>/` URLs only, `credentials: 'omit'`, a byte cap per file (1 MB is plenty; all files < 20 KB), fatal UTF-8 decoding. Never fetches `.pt` files.
+## 4. In-browser checks
 
-## 6. What we keep from #122 and port from #178
+All checks use WebCrypto SHA-256 and run in a Web Worker when a chain has more than 1,000 entries.
 
-**From #122 (Panshul, `feat/frontend-overview`), kept as the base:**
-- Deps: only `react`, `react-dom`, `react-router-dom`; dev: vite, vitest, typescript, testing-library, Playwright. No Tailwind, no animation libs.
-- `src/data/contracts.ts`, `src/data/validate.ts` (extended from the generic snapshot to per-file release contracts), `src/data/adapters/snapshotAdapter.ts` (becomes `sources/static.ts`), fixtures in `src/data/fixtures/` (moved to `tests/fixtures/`).
-- `src/layout/AppShell.tsx`, `StatusMark.tsx`, `ClaimStrip.tsx` (the "may claim / may not claim" strip suits the Overview), `src/inference/DisabledAdapter.ts`, `src/styles/tokens.css` + `base.css`.
-- Pages `OverviewPage.tsx`, `VerifyPage.tsx` reworked onto real data; `EvidenceListPage.tsx`/`EvidenceDetailPage.tsx` become Chain and Data; `Journey.tsx`, `TryPage.tsx`, `ReleasesPage.tsx` dropped or folded into Runs.
-- Tests `tests/validate.test.ts`, `tests/adapter.test.ts`.
+1. **Hash links.** For each entry, hash = sha256 of Python `json.dumps(entry, sort_keys=True)` (the rule in `simple/ovl.py` `read_chain`): default separators `", "` and `": "`, ASCII escaping, Python float repr. Entry *i* is linked when its `previous` equals entry *i−1*'s hash. I reproduce the canonical form in TypeScript and test it against all 37 published `previous` values; On the real file all 37 links pass.
+2. **Chain head vs anchor.** Count == `chain_entries` and hash of the last entry == `chain_head_sha256` (`9edbcaddbb08…5d8251a51`). This catches a truncated chain, which link checks alone cannot.
+3. **Chain file vs anchor.** sha256 of the raw `chain.jsonl` bytes == `chain_jsonl_sha256` (`c1f867e1…8a327`), and equals the `chain.jsonl` line in `release-hashes.txt`.
+4. **Hashes file vs anchor.** sha256 of `release-hashes.txt` == `release_hashes_sha256` (`479ce030…080e8d`).
+5. **Final digests.** Last entry `model` == `final_model` (`ec9a2b31…`), `state` == `final_state` (`934d681c…`).
+6. **Small files vs release-hashes.txt.** Every fetched file that has a line in `release-hashes.txt` is hashed and compared.
 
-**From #178 (adi, `feat/frontend-evidence-explorer`), ported:**
-- `playwright.config.ts`, `tests/browser/frontend.spec.ts` (keyboard/skip-link/mobile-menu test, 200 % zoom + reduced-motion test, 390/1440 px overflow test, error-state tests "snapshot errors never fall back to success", digest copy test), `scripts/static-server.mjs`.
-- `@axe-core/playwright` (devDependency) and the axe pattern.
-- `src/data/load.ts` loader safeguards (above); `isStale` idea for a "snapshot older than N days" note.
-- `@fontsource/ibm-plex-mono` + `licenses/IBM-Plex-Mono-OFL.txt` for hashes.
-- `tests/contracts.test.ts` cases for unsupported schema and HTTP failure.
+Each check returns MATCH, MISMATCH (with expected and actual), or PENDING (file missing, or not checkable in the browser). I verified checks 1–5 pass on the real `simple-run` files.
 
-**Not ported:** `components/ui/globe.tsx`, `container-scroll-animation.tsx`, `spotlight-card.tsx`, `demo.tsx`, `cobe`, `framer-motion`, Tailwind/`tailwind-merge`/`clsx`, `components.json`, the extra display fonts (Bricolage, Instrument Sans, Newsreader), committed `screenshots/*.png`, `CHECKLIST.md`/`PR_HANDOFF.md`/`VALIDATION_REPORT.md`, `zod` (#122's validators already cover it).
+**Link to the CLI fix.** Check 2 is the browser version of the fix for [issue #209](https://github.com/AOSSIE-Org/OpenVerifiableLLM/issues/209) / [PR #210](https://github.com/AOSSIE-Org/OpenVerifiableLLM/pull/210): `ovl.py verify` only checked links, so a chain with its tail removed passed. The site and the CLI must apply the same rule (count + head hash vs `anchor.json`), and the Verify page tells users which CLI version includes it. The truncated-chain fixture from #209 (first 30 lines) is a test case for the site too.
 
-## 7. Look and feel
+## 5. Pages in detail
 
-Models (see `REFERENCES.md` for notes on each): https://reproduce.debian.net, https://tests.reproducible-builds.org/debian/reproducible.html, Sigstore Rekor search https://search.sigstore.dev, https://slsa.dev, plus crt.sh (https://crt.sh), OpenSSF Scorecard viewer (https://scorecard.dev/viewer/) and Hugging Face dataset cards (https://huggingface.co/docs/hub/datasets-cards). Shared traits: plain tables, monospace hashes, permalinks per record, raw data one click away, no hero animation.
+Shared states on every page: **Loading** (skeleton rows with "Loading `chain.jsonl` from Hugging Face…"); **Error** (file name, URL, reason, retry button; e.g. "Couldn't load `chain.jsonl`: HTTP 404. Nothing on this page is shown as verified."); **Invalid** ("`anchor.json` doesn't match the expected format: `chain_head_sha256` is not a 64-character hex string."); **Missing optional file** (section shows PENDING with "This run doesn't publish `hardware-map.jsonl`."); **MISMATCH** (red badge, expected vs actual hash side by side, link to the raw file). Errors never fall back to a success state.
 
-**Palette (cross-checked against the reference notes, `REFERENCES.md`, same values and ratios).** Source: AOSSIE brand guide, https://github.com/AOSSIE-Org/Website/blob/main/brand/Brand.md (read from a local clone of AOSSIE-Org/Website: Golden Wallet `#FFCD00` primary, Baggy Green `#00843D` secondary, Primary Brand Dark `#282C33`, Dark Mode Surface `#0F1115`, border `#E6E6E6`, font Inter). Neutral light/dark theme + one accent (gold); green/amber/red are for status only. Contrast ratios computed with the WCAG 2.x formula:
+### 5.1 Overview `/`
+Question: What was trained, and is the evidence intact?
+Top to bottom:
+1. Lede (the question) and run name + `path`.
+2. Verdict banner, computed from checks 1–5: "Evidence intact: 38/38 chain entries linked · head matches anchor · file hashes match · 46/46 segment checks MATCH." On any failure: "Evidence check failed: chain head does not match `anchor.json`" with a link to the failing check. Each check is a row with a badge.
+3. What was released: `dataset`, `commit` (link to GitHub), `final_model`, `final_state`, training start/end (`time` of entries 0 and 37, ISO UTC), recipe summary ("6 layers, 6 heads, 384 dim, vocab 32,000, context 512, seed 1234").
+4. What was checked: segment re-runs by checker (37 / 8 / 1), GPU and driver; independent checks: "None outside the project yet."
+5. What is not checked / caveats: "Bit-exact results need an RTX 5090. Other architectures give different bits (see Hardware)." "A timestamp shows the release existed by a date, not when training happened."
+6. Links to each page.
+Interactions: copy buttons on hashes; each verdict row links to its evidence.
 
-| Role | Light | Ratio | Dark | Ratio |
-|---|---|---|---|---|
-| Background / text | `#FFFFFF` / `#282C33` | 14.02 | `#0F1115` / `#E6E6E6` | 15.14 |
-| Muted text | `#5C6370` on white | 6.05 | `#A0A6B0` | 7.72 |
-| Accent (fill: active nav, focus ring, banner rule) | `#FFCD00` with `#282C33` text on it | 9.33 | `#FFCD00` on `#0F1115` | 12.58 |
-| Accent as text/link | `#7A5A00` (darkened gold) | 6.38 | `#FFCD00` | 12.58 |
-| MATCH (✓ + "MATCH") | `#15803D` | 5.02 | `#4ADE80` | 10.84 |
-| PENDING / NOT CHECKED (○ + "PENDING") | `#B45309` | 5.02 | `#FBBF24` | 11.32 |
-| MISMATCH (✕ + "MISMATCH") | `#B91C1C` | 6.47 | `#F87171` | 6.83 |
-| Border | `#E6E6E6` (decorative only, 1.25) | — | `#3A3D45` | — |
+### 5.2 Chain `/chain`
+Question: Is the training record unbroken, entry by entry?
+1. Summary line: "38 entries · all links OK · head matches `anchor.json`."
+2. Table (caption = question): `index`, `kind`, `control.phase`, `control.epoch`, `control.global_step`, `time` (UTC), `model` (short), `state` (short), `previous` (short), computed hash (short), link status (✓ MATCH "links to #i−1" / ✕ MISMATCH "expected …, found …").
+3. Each row has a permalink (`/chain#37`) and a `<details>` with raw JSON; entry 0 also shows `data`, `environment`, `recipe`.
+4. Head row marked "Head · anchored".
+Interactions: filter by `kind`; sort by index; jump to index; copy any hash; paged at 100 rows for long chains.
+States: break at row *k* → row and all later rows flagged "after a break", banner names *k*. Truncation → "Chain has 30 entries; `anchor.json` says 38."
 
-Status colours are deliberately not brand colours: Baggy Green `#00843D` (4.81 on white, 3.93 on `#0F1115`, fails in dark) is used only in the header/footer logo and accents, so "brand" is never confused with "verified". Each status always has its own colour, icon and text label. Gold on white is 1.5:1, so gold is never used for text on light backgrounds. All pairs pass AA (4.5:1) for body text; axe enforces it.
+### 5.3 Verify it yourself `/verify`
+Question: How do I check this without trusting the site?
+Three tiers, each: what it proves, prerequisites, exact command (copy button), expected output, time.
+1. No GPU: download files; `sha256sum -c release-hashes.txt` (expected: every line `OK`); chain recompute with `ovl.py verify` (with the head check from PR #210) — expected `chain head MATCH (38 entries)`.
+2. Timestamp: the two `openssl ts -verify` commands from the release README; expected `Verification: OK`.
+3. GPU: RTX 5090, image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`; `bash code/simple/verify_segment.sh`, `K=3 …`, `SEGMENTS="7 8" …`; expected `MATCH` per segment, about 20 min each. Shows catch probability 1 − ((N−1)/N)^M with N = 37 and a small input for M.
+Copy: "Run these yourself. If your result differs, that is a finding; please report it."
 
-Type: Inter (AOSSIE brand font) with system fallback for text; IBM Plex Mono for hashes, commands and raw JSON.
+### 5.4 Hardware `/hardware`
+Question: On which hardware do the bits reproduce?
+Table from `hardware-map.jsonl`: `segment`, `hardware`, `driver`, `software`, `result`, `note` (all 5 rows). Callout above the MISMATCH rows: "Expected: other GPU architectures and CPUs run different low-level kernels, so the bits differ. This is not evidence of tampering." Trust line: "Bit-exact checks need an RTX 5090 (Blackwell). Drivers 570.195.03 and 595.91.07 agree." Interaction: filter by result.
 
-Components: `Hash` (short form + full on expand + copy), `CopyCommand` (pre block, copy button, expected-output block), `StatusBadge` (icon + word + colour), `VerdictBanner`, `DataTable` (sortable, sticky header, row permalinks), `RawJson`, `FileError`.
+### 5.5 Files and data `/data`
+Question: Which bytes are official, and which data went in?
+1. Integrity line: "`release-hashes.txt` matches `anchor.json`" (check 4).
+2. Table of all 42 lines: file, sha256, size (HF tree API at build time), download link, and for small files a browser result (MATCH/MISMATCH); `.pt` files show "not checked in browser — use `sha256sum -c`".
+3. Data digests from entry 0: `data.wikipedia`, `data.conversation`; `recipe` digest.
+4. Coverage: which segments were checked; for the unlearning run, the excluded article and the shared range 0–30.
 
-**Footer (cross-checked against the reference notes, `REFERENCES.md`).** What real AOSSIE sites do:
-- aossie.org ([AOSSIE-Org/Website](https://github.com/AOSSIE-Org/Website), `src/components/Footer.tsx`, `src/messages/en.json`): "© Australian Open Source Software Innovation and Education (AOSSIE)." + logo `/brand/icons/aossie_logo.svg`.
-- Zplit ([AOSSIE-Org/Zplit-Website](https://github.com/AOSSIE-Org/Zplit-Website)): "© {year} AOSSIE. All rights reserved." + "Made with ♥ by AOSSIE Community" linking https://aossie.org; its hero uses "Made by" + AOSSIE link.
-- Resonate ([AOSSIE-Org/Resonate-Website](https://github.com/AOSSIE-Org/Resonate-Website)): "Made with 🤍 by AOSSIE Community", AOSSIE → https://aossie.org, Other Projects → https://aossie.org/projects.
-- PictoPy ([AOSSIE-Org/PictoPy-Website](https://github.com/AOSSIE-Org/PictoPy-Website)): "Made with love by AOSSIE team".
+### 5.6 Anchor `/anchor`
+Question: When was this release fixed, and how do I check that?
+1. `anchor.json` field by field (all 11 fields), each with what it means.
+2. The two `.tsr` files (DigiCert, FreeTSA) with size and download link.
+3. Timestamp time, extracted at build time with `openssl ts -reply -text` and shown as UTC (release README: 2026-10-20 14:38:43 UTC); PENDING if not extracted.
+4. Verify commands with copy buttons.
+Copy: "A timestamp proves this `anchor.json` existed unchanged by this time. It does not prove when training happened."
 
-Proposal: keep #122's line "OpenVerifiableLLM is an AOSSIE project" and add "Made with ♥ by [AOSSIE](https://aossie.org) Community" (Zplit/Resonate wording) with the AOSSIE logo, then links: GitHub repo, licence (repo LICENSE), HF dataset release (pinned revision), Discord, other AOSSIE projects. Second line: "© {year} AOSSIE." Rajat to confirm (question 3).
+### 5.7 Second wave
+Segments: grid of 37 cells, each MATCH/MISMATCH/PENDING with checker count, plus the full `verifications.jsonl` table with filter by checker. Runs: table of runs with pinned revision, entries, verdict.
 
-## 8. Architecture and folder layout
+## 6. Architecture and folder layout
+
+Stack: React, react-dom, react-router-dom, Vite, TypeScript strict. Dev: vitest, testing-library, Playwright, `@axe-core/playwright`. Fonts: `@fontsource/inter`, `@fontsource/ibm-plex-mono` (OFL licence file included). Static build, no runtime server.
 
 ```
 frontend/
   src/
     data/
-      contracts.ts       # per-file types, schema ids        (from #122)
-      validate.ts        # one validator per file            (from #122, extended)
-      load.ts            # bounded fetch                     (from #178)
-      sources/hf.ts      # HF resolve/<revision>/ URLs, pinned
-      sources/static.ts  # public/data/<run>/ snapshot       (from #122 snapshotAdapter)
-      release.ts         # loadRelease(run) -> Release — the single adapter
-      checks/chain.ts    # link + head + file hash (WebCrypto)
-      runs.ts            # list of runs + revision pins (only file to edit for a new run)
-    pages/               # Overview, Chain, Verify, Hardware, Data, Anchor (+ Segments, Runs)
-    components/          # Hash, CopyCommand, StatusBadge, VerdictBanner, DataTable, RawJson
-    layout/              # AppShell, Nav, Footer                (from #122)
-    inference/           # DisabledAdapter only                (from #122)
-    styles/tokens.css, base.css
-  scripts/snapshot.mjs   # pull small release files into public/data/<run>/ and record sha256
-  scripts/static-server.mjs                                   (from #178)
+      contracts.ts       # types + schema ids per file
+      validate.ts        # one validator per file
+      load.ts            # bounded fetch
+      canonical.ts       # Python json.dumps(sort_keys=True) in TS
+      checks/            # links.ts, head.ts, fileHashes.ts (WebCrypto)
+      sources/hf.ts      # HF resolve/<revision>/ URLs
+      sources/static.ts  # public/data/<run>/
+      release.ts         # loadRelease(run)
+      runs.ts            # runs + pinned revisions (the only file to edit for a new run)
+    pages/  components/  layout/  inference/DisabledAdapter.ts
+    styles/tokens.css  base.css
+  scripts/snapshot.mjs  scripts/static-server.mjs  scripts/contrast.mjs
   tests/unit/  tests/e2e/  tests/fixtures/
 ```
 
-Scaling to many runs: `runs.ts` lists runs with a pinned HF revision; routes are `/r/:run/...` with `/` redirecting to the latest; each run's files are fetched lazily, only for the page open. A new run is one line in `runs.ts` plus a snapshot. A new file format is a new schema id + validator; old runs keep their old validator. Large chains (thousands of entries) use a paged table (100 rows) and hash checking in a Web Worker.
+Components: `Hash` (first 8 … last 8, full value in DOM, copy), `CopyCommand` (command + expected output), `StatusBadge` (icon + word + colour), `VerdictBanner`, `CheckRow`, `DataTable` (caption, sticky header, row permalinks), `RawJson`, `FileError`.
+
+Multi-run scaling: routes `/r/:run/...`; files fetched lazily per page and cached per run; a new run = one line in `runs.ts` + snapshot; a new file format = new schema id + validator, old runs keep theirs; chains over 1,000 entries use paging and a Worker.
+
+## 7. Design system
+
+Brand source: AOSSIE brand guide (AOSSIE-Org/Website `brand/Brand.md`). Status colours are not brand colours, so "brand" is never read as "verified".
+
+| Role | Light | Dark |
+|---|---|---|
+| Background / text | `#FFFFFF` / `#282C33` (14.02:1) | `#0F1115` / `#E6E6E6` (15.14:1) |
+| Muted text | `#5C6370` (6.05:1) | `#A0A6B0` (7.72:1) |
+| MATCH ✓ | `#15803D` (5.02:1) | `#4ADE80` (10.84:1) |
+| MISMATCH ✕ | `#B91C1C` (6.47:1) | `#F87171` (6.83:1) |
+| PENDING ○ | `#B45309` (5.02:1) | `#FBBF24` (11.32:1) |
+| Brand gold `#FFCD00` | fill only (active nav, focus ring, banner rule), with `#282C33` text (9.33:1); never text on light | fill only |
+| Brand green `#00843D` | header/footer logo and rules only | header/footer only |
+| Border | `#E6E6E6` (decorative) | `#3A3D45` |
+
+Type: Inter for text, IBM Plex Mono for hashes, commands, raw JSON; `tabular-nums` for counts. Light/dark from `prefers-color-scheme` plus a manual toggle saved in `localStorage`.
+
+## 8. Footer
+
+Every page: AOSSIE logo, "OpenVerifiableLLM is an AOSSIE project · Made with ♥ by [AOSSIE](https://aossie.org) Community" (the heart has `role="img" aria-label="love"`), links: GitHub repo, licence, HF dataset (pinned revision), Discord, other AOSSIE projects (aossie.org/projects). Second line: "© {year} AOSSIE." This follows the Zplit and Resonate sites.
 
 ## 9. Accessibility
 
-WCAG 2.2 AA. Semantic tables with `<th scope>`, captions stating the question; status never by colour alone; skip link; visible focus ring (gold, 3 px, ≥ 3:1 against both themes); copy buttons announce "Copied" via `aria-live="polite"`; `prefers-reduced-motion` respected (there is little motion anyway); usable at 200 % zoom and 320 px width; `prefers-color-scheme` + manual toggle.
+WCAG 2.2 AA. Tables with `<caption>` (the page question) and `<th scope>`; status never by colour alone; skip link; visible gold focus ring (3 px, ≥ 3:1 on both themes); copy buttons labelled ("Copy SHA-256 of chain head") with an `aria-live="polite"` "Copied"; truncated hashes keep the full value in the DOM; usable at 200 % zoom and 320 px width; `prefers-reduced-motion` honoured; times shown in UTC with `<time datetime>`.
 
-## 10. Tests and CI
+## 10. Testing and CI
 
-- Unit (vitest): every validator with a good fixture and bad fixtures (tampered `previous`, reordered index, truncated file, wrong schema id, head ≠ anchor, file hash ≠ `release-hashes.txt`). Golden test: recomputed hashes equal all 38 published `previous` values of the real `simple-run` chain.
-- Playwright, per page (one smoke + one axe each, as a table-driven spec):
+- Unit (vitest): each validator with good and bad fixtures (tampered `previous`, reordered index, truncated chain from #209, wrong schema id, head ≠ anchor, file hash ≠ `release-hashes.txt`, missing file, invalid JSON line).
+- Chain recompute test: canonical form reproduces all 37 published `previous` values and `chain_head_sha256` of the real `simple-run` chain.
+- Colour-contrast test (`scripts/contrast.mjs` as a vitest): reads `tokens.css` and fails if any text/status pair in either theme drops below 4.5:1, or gold is used as text on light.
+- Playwright (ported from #178): one smoke + one axe test per page, in light and dark; keyboard/skip link; 390 px and 1440 px no overflow; 200 % zoom; error states never show success; copy button copies the exact full value.
 
-| Page | Smoke assertion | axe |
-|---|---|---|
-| Overview | banner reads "Evidence intact" and "37/37 MATCH"; model digest starts `ec9a2b31` | 0 violations, light + dark |
-| Chain | 38 rows; `/chain#37` opens entry 37 raw JSON; tampered fixture shows a broken link at that row | 0 |
-| Verify | three tiers; copy button copies the exact `verify_segment.sh` command | 0 |
-| Hardware | 5 rows; RTX 4090 row shows MISMATCH text | 0 |
-| Data | hashes table row count = lines in `release-hashes.txt` | 0 |
-| Anchor | shows `chain_head_sha256` and both TSA names | 0 |
+| Page | Smoke assertion |
+|---|---|
+| Overview | "Evidence intact"; "46/46"; `final_model` starts `ec9a2b31` |
+| Chain | 38 rows; `/chain#37` opens entry 37; tampered fixture flags that row |
+| Verify | three tiers; copy gives the exact `verify_segment.sh` command |
+| Hardware | 5 rows; RTX 4090 row reads MISMATCH with the explanation |
+| Data | 42 rows; hashes-file check MATCH |
+| Anchor | `chain_head_sha256` and both TSA names shown |
 
-- Ported from #178: keyboard/skip-link, 390 px + 1440 px no-overflow, 200 % zoom, error states never show success.
-- CI: GitHub Actions job on `frontend/**`: `npm ci`, typecheck, unit, build, Playwright (chromium) against the static snapshot. No network in CI.
+- CI: GitHub Actions on `frontend/**`: `npm ci`, typecheck, lint, unit, build, size check, Playwright (Chromium) against the static snapshot. Network blocked in CI; all data from `public/data/` and fixtures.
 
 ## 11. Performance budget
 
-JS ≤ 120 KB gzip initial (React + router + app), CSS ≤ 20 KB, fonts: Inter + Plex Mono subsets, `font-display: swap`, ≤ 100 KB. LCP ≤ 2.0 s on Lighthouse mobile; per-run data < 50 KB. Static build, deployable on GitHub Pages. Budget checked in CI with a size check on `dist/`.
+Initial JS ≤ 120 KB gzip; CSS ≤ 20 KB; fonts (subset, `font-display: swap`) ≤ 100 KB; data per run < 50 KB; LCP ≤ 2.0 s on Lighthouse mobile; chain checks for 38 entries < 50 ms. Size checked in CI on `dist/`.
 
-## 12. Split of work
+## 12. Deployment
 
-- **Panshul:** data layer (`contracts.ts`, `validate.ts`, `release.ts`, `checks/chain.ts`, `runs.ts`, snapshot script), Overview, Chain, Data, Anchor, CI.
-- **adi:** Playwright + axe port and the per-page spec, Verify and Hardware pages, `CopyCommand`/`DataTable` components (from his views), keyboard/zoom tests.
-- Shared: design tokens and footer (review each other's). Commits carrying adi's work use `Co-authored-by: AdityasagarR123 <…>`.
+Static Vite build with a relative base path. GitHub Pages via an Actions workflow on `main`, or wherever maintainers choose. Snapshot refreshed by running `scripts/snapshot.mjs` and committing the new `public/data/<run>/` with the revision. A 404 fallback for client routes.
 
-## 13. Milestones (small reviewable commits, one PR)
+## 13. Milestones (small commits, one PR)
 
-1. Scaffold from #122; remove Journey/Try; add Playwright config + static server from #178.
-2. Contracts + validators for the 7 files, fixtures, unit tests (incl. 38-hash golden test).
-3. Sources + `loadRelease`; snapshot script; `public/data/simple-run/`.
-4. Layout, tokens, footer, `StatusBadge`, `Hash`.
-5. Overview + Chain (with smoke + axe).
-6. Verify + Hardware (with smoke + axe).
-7. Data + Anchor (with smoke + axe).
-8. `/r/:run` routing + unlearning run.
-9. CI job, size budget, README (how to add a run).
+1. Scaffold `frontend/` from #122's structure; drop Journey/Try; add Playwright config + static server from #178.
+2. Contracts + validators for all files; fixtures; unit tests.
+3. `canonical.ts` + checks; chain recompute golden test; truncated-chain test.
+4. Sources, `loadRelease`, snapshot script, `public/data/simple-run/`.
+5. Tokens, contrast test, layout, footer, `StatusBadge`, `Hash`, `CopyCommand`.
+6. Overview + Chain, with smoke + axe.
+7. Verify + Hardware, with smoke + axe.
+8. Data + Anchor, with smoke + axe.
+9. `/r/:run` routing + `unlearning-3i-atlas`.
+10. CI workflow, size budget, README (how to add a run).
+11. Second wave: Segments, Runs.
 
-## 14. Open questions for rajat
+## 14. Questions for the maintainers
 
-1. Which `verifications.jsonl` format is canonical: the published lines or what `ovl.py verify` writes?
-2. Read HF directly at a pinned revision, or commit a snapshot under `frontend/public/data/`? (Plan: snapshot, HF as the cited source.)
-3. Footer and logo: is "Made by AOSSIE" + logo right, or is there a project-site convention you prefer?
-4. Scope: `simple-run` + `unlearning-3i-atlas` only, or legacy releases too?
+1. Which `verifications.jsonl` format is canonical: the published lines or what `ovl.py verify` writes (it adds `PASS` and `chain_head`)? I'll accept the published one first.
+2. Read HF live at a pinned revision, or commit a snapshot under `frontend/public/data/`? (My default: snapshot, HF cited as source.)
+3. Is the footer wording and logo above right, or is there a project convention?
+4. Scope: `simple-run` and `unlearning-3i-atlas` only, or legacy releases too?
 5. Target `main` (`frontend/`) even though `simple/` (branch `simple-production-loop`) isn't merged yet?
-6. Will the "real data layout" after the release change any file names or schema ids (e.g. a `ovl.chain.v1` id on chain lines)?
-7. Should independent (non-project) checks be submitted somewhere the site can read (a file in the dataset, or GitHub issues)?
+6. Will file names or schema ids change in the final release layout (e.g. a schema id on chain lines)?
+7. Should independent checks be submitted somewhere the site can read (a dataset file or GitHub issues)?
 8. Hosting: GitHub Pages under `aossie-org.github.io/OpenVerifiableLLM`, or elsewhere?
+9. Will PR #210's head check land, so the Verify page can point to a CLI version that matches the in-browser check?
+10. Should the `recipe.json` digest in chain entry 0 be checkable in the browser, i.e. what exact canonical form produced it?
