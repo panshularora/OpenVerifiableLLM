@@ -44,7 +44,7 @@ Loader rules (from #178's `load.ts`): only same-origin or allow-listed HF `resol
 | `verifications.jsonl` | `segment` (int), `result` ∈ {MATCH, MISMATCH}, `checker`, `code` (e.g. `ovl.py 202ac6ce`), `gpu`, `driver`. Real file: 46 rows, all MATCH; checkers: "project second pod" 37, "project training pod" 8, "project fresh machine public files only" 1. | `segment` in 0..chain_entries−2; duplicate segments allowed and aggregated |
 | `hardware-map.jsonl` | `segment` (int or string, e.g. `"all 37"`), `result`, `hardware`, `driver`, `software`, `note`. Real file: 5 rows; segment 32 MATCH on RTX 5090, MISMATCH on RTX 4090, H100, x86_64 CPU; `"all 37"` MATCH on RTX 5090. | string segments kept as labels, never coerced |
 | `release-hashes.txt` | 42 lines `<64-hex>  <path>` (sha256sum format) | own sha256 == `release_hashes_sha256`; its `chain.jsonl` line == `chain_jsonl_sha256` |
-| `recipe.json` | `batch_size` 32, `boundary_every` 18080, `context` 512, `conversation_epochs` 3, `init`, `model {attn_impl, dropout, embed_dim 384, max_seq_len 512, num_heads 6, num_layers 6, vocab_size 32000}`, `schedule {conversation, floor, peak, warmup, wikipedia_updates}`, `seed` 1234, `weight_decay` | its sha256 under the Python canonical form == chain entry 0 `recipe` (shown as PENDING if the canonical form is not confirmed) |
+| `recipe.json` | `batch_size` 32, `boundary_every` 18080, `context` 512, `conversation_epochs` 3, `init`, `model {attn_impl, dropout, embed_dim 384, max_seq_len 512, num_heads 6, num_layers 6, vocab_size 32000}`, `schedule {conversation, floor, peak, warmup, wikipedia_updates}`, `seed` 1234, `weight_decay` | sha256 of `json.dumps(recipe, sort_keys=True)` (Python default separators `", "` and `": "`, no indent) == chain entry 0 `recipe`; verified MATCH on simple-run (`d0d9fc61…9fc5`). The browser uses a small helper that sorts keys and uses those separators, because `JSON.stringify` adds no spaces; a unit test pins this digest |
 | `anchor.digicert.tsr`, `anchor.freetsa.tsr` | binary, linked only | listed in `release-hashes.txt` if present there; size shown |
 | `README.md` | linked, not re-rendered | — |
 
@@ -220,4 +220,3 @@ Static Vite build with a relative base path. GitHub Pages via an Actions workflo
 7. Should independent checks be submitted somewhere the site can read (a dataset file or GitHub issues)?
 8. Hosting: GitHub Pages under `aossie-org.github.io/OpenVerifiableLLM`, or elsewhere?
 9. Will PR #210's head check land, so the Verify page can point to a CLI version that matches the in-browser check?
-10. Should the `recipe.json` digest in chain entry 0 be checkable in the browser, i.e. what exact canonical form produced it?
