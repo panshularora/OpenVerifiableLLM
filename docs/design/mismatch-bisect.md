@@ -21,14 +21,19 @@ comparing per-step digests can give a first hint.
 
 It compares two traces of the same segment and prints one of:
 
-- `IDENTICAL`: every step has the same digests.
-- `DIVERGED at step s`: the first step where they differ, the last equal step, how many steps differ,
-  and whether the divergence persists to the end or the digests become equal again (and from which
-  step). If the optional batch hashes differ, it says the replays read different data, which is not
-  numeric nondeterminism.
-- `FAIL`: a trace is malformed (bad JSON, missing or extra fields, a non-hex digest, steps not
-  consecutive, more than one segment, fields changing between rows) or the two are misaligned
-  (different segment, first step, length, or fields). It never compares a partial overlap.
+- `IDENTICAL`: every row has the same digests.
+- `DIVERGED`: the first differing row and the range of steps where the real first divergence lies:
+  after the last equal row, up to and including the first differing row. With a row every step that
+  range is one step; with a row every 100 steps it is up to 100 steps, and rerunning with a smaller
+  stride over that range narrows it. If the very first row differs, the range has no lower end ("at or
+  before step s"), since the trace says nothing about steps before it. It also gives how many rows
+  differ and whether the divergence persists to the end or the digests become equal again (and from
+  which row). If the optional batch hashes differ, it says the replays read different data, which is
+  not numeric nondeterminism.
+- `FAIL`: a trace is malformed (bad JSON, missing or extra fields, a non-hex digest, rows not a fixed
+  number of steps apart or not at multiples of that stride, a gap, more than one segment, fields
+  changing between rows) or the two are misaligned (different segment, stride, first step, length, or
+  fields). It never compares a partial overlap.
 
 ```bash
 python simple/bisect_trace.py A.jsonl B.jsonl [--json]   # exit 0 IDENTICAL, 2 DIVERGED, 1 FAIL
@@ -43,14 +48,18 @@ The format borrows names from what `ovl.py` already computes:
 {"segment": 7, "step": 70001, "hash": "<64 hex>", "batches": "<64 hex>"}
 ```
 
-- one line per training step, in order, consecutive `step` values (the global step after the update);
+- one line per row, in order. Rows are a fixed stride `S` apart (`S = 1` is a row per step): each
+  `step` is a multiple of `S`, each row is exactly `S` after the one before, and both traces must use
+  the same `S`. `step` is the global step after the update. The stride is read from the first two rows;
+  a one-row trace has none;
 - `segment` is `k` for segment `k -> k+1`;
 - `hash` is meant to be `ovl.state_digest(model, opt)` after the step, the same digest the chain uses
   at boundaries;
 - `batches` is optional: the running batch hash that `ovl.py` already keeps in the control record.
 
 Hashing the full state every step costs time; how often to write a row (every step, every 100 steps)
-is an open question, and the tool only needs both traces to use the same steps.
+is an open question. The stride is the trade-off: a coarse stride is cheap but only places the first
+divergence within `S` steps.
 
 ## How to read the result
 
@@ -78,6 +87,7 @@ is an open question, and the tool only needs both traces to use the same steps.
 ## Tests and AI use
 
 `tests/simple/test_bisect_trace.py` uses synthetic traces only: identical, diverged at the first,
-middle and last step, persisting and recovering divergence, data divergence, and every malformed or
-misaligned case above. No real replay trace has been produced or compared. Written with AI coding
+middle and last row, persisting and recovering divergence, data divergence, a stride of 50 and 100
+with the reported range, and every malformed or misaligned case above, including a gap and two
+different strides. No real replay trace has been produced or compared. Written with AI coding
 assistance and reviewed against those tests.
