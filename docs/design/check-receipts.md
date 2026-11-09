@@ -92,6 +92,10 @@ It fails closed: any step that can't be completed is a FAIL, never a skip.
 8. The results cover exactly the derived segments, and the outcomes are valid and not mixed with
    ABANDONED.
 
+`verify` checks one outcome on its own, so VALID there means that outcome is well-formed. It does not
+know whether its registration is the key's first; only `receipts_report.py` checks that, and `verify`
+says so in its output (`first_registration`).
+
 `receipts_report.py` finds every pull request merged into `main` that touched `checkers/` (through
 the commit history, so a registration file deleted later still counts), runs `verify` on every
 comment in the issue, keeps the earliest registration per key and one outcome per `j`, rejects
@@ -129,6 +133,9 @@ independent. It prints the chance that `d` independent draws catch one forged se
   they did not choose. Its value comes from several independent keys, and from the fact that a MATCH
   claim on a segment can be rechecked by anyone.
 - That two keys are two people. Independence is a judgment the reader makes (`--independent`).
+  One person can register several keys. Each extra key needs its own maintainer merge and stays in
+  the history, and a key that stops checking shows its draws as MISSING, so extra keys can't quietly
+  drop bad draws. That is why coverage counts only keys someone has marked as independent.
 - That the run is honest on segments nobody drew. With `d` independent draws out of `N = 37`
   segments, one forged segment is caught with probability `1 − (36/37)^d`: about 24% at 10 draws and
   about 93.5% at 100.

@@ -490,7 +490,8 @@ def main(argv=None):
     for name in ("schedule", "derive", "sign", "abandon", "verify"):
         s = sub.add_parser(name)
         if name == "verify":
-            s.add_argument("url", help="GitHub issue comment URL of the outcome")
+            s.add_argument("url", help="GitHub issue comment URL of the outcome. VALID means this one outcome is "
+                           "well-formed; only receipts_report.py checks that its registration is the key's first")
         else:
             s.add_argument("--registration", required=True, help="URL of the merged pull request that added the registration")
         if name in ("derive", "sign", "abandon"):
@@ -575,7 +576,8 @@ def run(a):
     if a.cmd == "verify":
         out = verify(a.url, posts, release, anchor_time, rounds)
         print(json.dumps({"verdict": "VALID", "source": "mirror" if a.posts else "github", "key_fp": out["_key_fp"], "j": out["challenge"]["j"],
-                          "m": out["challenge"]["m"], "round": out["challenge"]["round"], "results": out["results"]}))
+                          "m": out["challenge"]["m"], "round": out["challenge"]["round"], "results": out["results"],
+                          "first_registration": "not checked here; run receipts_report.py"}))
         return 0
     reg = Registration(a.registration, posts, release, anchor_time)
     if a.cmd == "schedule":
