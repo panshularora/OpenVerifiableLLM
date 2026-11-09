@@ -14,7 +14,6 @@ folder `release/simple-run/`. The terms (segment, boundary, chain entry, anchor)
 - [3. One segment, by hand](#3-one-segment-by-hand)
 - [Check the timestamps by hand](#check-the-timestamps-by-hand)
 - [What a check proves, and what it relies on](#what-a-check-proves-and-what-it-relies-on)
-- Experimental: [signed check receipts with drand-picked segments](design/check-receipts.md)
 
 ## 1. Consistency check, without a GPU
 
