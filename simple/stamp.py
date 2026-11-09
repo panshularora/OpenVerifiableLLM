@@ -46,9 +46,18 @@ def granted(reply):
 def stamp_entry(run, entry):
     out = Path(run) / "timestamps"
     out.mkdir(exist_ok=True)
-    digest = bytes.fromhex(entry_hash(entry))
+    stamp_digest(out, f"entry-{entry['index']:05d}", bytes.fromhex(entry_hash(entry)), f"entry {entry['index']}")
+
+
+def stamp_digest(out, stem, digest, label):
+    """Ask both TSAs to timestamp a 32-byte SHA-256 digest; replies go to OUT/STEM.<tsa>.tsr.
+
+    Used for chain entries, and for any other hash, such as a check receipt's envelope id. A timestamp
+    shows the hash existed by then; it does not show the object was public."""
+    if len(digest) != 32:
+        raise ValueError("stamp_digest needs a 32-byte SHA-256 digest")
     for name, url in TSA.items():
-        path = out / f"entry-{entry['index']:05d}.{name}.tsr"
+        path = Path(out) / f"{stem}.{name}.tsr"
         if path.exists():
             continue
         for attempt in range(3):
@@ -63,7 +72,7 @@ def stamp_entry(run, entry):
                 break
             except Exception as e:  # a missing stamp is filled in later by `stamp.py RUN`
                 if attempt == 2:
-                    print(f"timestamp {name} entry {entry['index']} failed: {e}", flush=True)
+                    print(f"timestamp {name} {label} failed: {e}", flush=True)
                 else:
                     time.sleep(10 * (attempt + 1))
 
