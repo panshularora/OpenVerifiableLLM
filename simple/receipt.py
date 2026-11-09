@@ -5,9 +5,10 @@ with the checker's Ed25519 key, and its segment comes from a drand round that th
 
   1. keygen    make a key; its fingerprint key_fp is SHA-256 of the raw public key
   2. register  sign a registration that binds the key to one release anchor and declares k
-               (segments per check) and m (number of checks). Post it as a GitHub issue comment.
-  3. schedule  R0 is the first drand round after the comment's server-side created_at; check j uses
-               round R0 + j. The registration must be posted after the release anchor's RFC 3161 time.
+               (segments per check) and m (number of checks). Add it as checkers/<key_fp>.json in a
+               pull request of its own; it counts once a maintainer merges that pull request.
+  3. schedule  R0 is the first drand round after the pull request's merged_at; check j uses round
+               R0 + j. The merge must come after the release anchor's RFC 3161 time.
   4. derive    segments for check j from round R0 + j, the chain head, key_fp and j. Anyone can
                recompute them, whether or not the checker reports them.
   5. sign      after `verify_segment.sh`, sign the result as an in-toto Statement in a DSSE envelope;
@@ -16,18 +17,24 @@ with the checker's Ed25519 key, and its segment comes from a drand round that th
 
   python simple/receipt.py keygen --out ~/.ovl/checker.key
   python simple/receipt.py register --anchor RUN/anchor.json --key ~/.ovl/checker.key --k 1 --m 3
-  python simple/receipt.py schedule --registration URL --anchor RUN/anchor.json
-  python simple/receipt.py derive --registration URL --anchor RUN/anchor.json --j 1 [--quiet]
-  python simple/receipt.py sign --registration URL --anchor RUN/anchor.json --j 1 --key KEY \\
+  python simple/receipt.py schedule --registration PR_URL --anchor RUN/anchor.json
+  python simple/receipt.py derive --registration PR_URL --anchor RUN/anchor.json --j 1 [--quiet]
+  python simple/receipt.py sign --registration PR_URL --anchor RUN/anchor.json --j 1 --key KEY \\
         --report RUN/local-verifications.jsonl [--previous URL_OF_OUTCOME_J-1]
-  python simple/receipt.py abandon --registration URL --anchor RUN/anchor.json --j 1 --key KEY --reason TEXT
+  python simple/receipt.py abandon --registration PR_URL --anchor RUN/anchor.json --j 1 --key KEY --reason TEXT
   python simple/receipt.py verify URL_OF_OUTCOME --anchor RUN/anchor.json
 
+Why a merged pull request: a registration's draws are known seconds after its time, so a registration
+that its author could delete (an issue comment) could be posted, inspected, deleted and posted again
+until the draws suit them. A merged pull request can't be undone quietly. Outcomes stay issue
+comments: deleting one leaves a gap that the report shows as MISSING.
+
 Posts are read from the GitHub REST API (set GITHUB_TOKEN to raise the rate limit), or from a JSON
-mirror given with --posts that maps each URL to the API's {created_at, updated_at, body}.
-Trust assumptions: the drand quicknet threshold, and GitHub's server clock for created_at. A signature
-shows who made a claim, not that they ran the check or that they are independent of the project.
-See docs/receipts.md.
+mirror given with --posts. A mirror is only as trustworthy as whoever wrote it: VALID against a
+mirror says nothing about what GitHub holds. Trust assumptions: the drand quicknet threshold,
+GitHub's server clock for merged_at and created_at, and the maintainers who merge registrations.
+A signature shows who made a claim, not that they ran the check or that they are independent of the
+project. See docs/design/check-receipts.md.
 """
 import argparse
 import base64
@@ -53,8 +60,11 @@ PREDICATE_TYPE = "https://github.com/AOSSIE-Org/OpenVerifiableLLM/check-receipt/
 SELECTION = "ovllm-select-v0"
 OUTCOMES = ("MATCH", "MISMATCH", "WRONG_STACK", "ERROR")  # plus ABANDONED, only via `abandon`
 MAX_M = 64
-TIME_SOURCE = "github.issue_comment.created_at"
+TIME_SOURCE = "github.pull_request.merged_at"
+REGISTRY = "AOSSIE-Org/OpenVerifiableLLM"  # where registrations are merged and outcomes are posted
+REGISTRY_BRANCH = "main"
 COMMENT_URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)#issuecomment-(\d+)$")
+PULL_URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)$")
 
 
 class Invalid(Exception):
@@ -83,7 +93,10 @@ def load_key(path):
     """A raw 32-byte Ed25519 seed, the key-file layout of the earlier src/signing.py (#92), so a
     PyNaCl SigningKey file works here unchanged."""
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    raw = Path(path).expanduser().read_bytes()
+    try:
+        raw = Path(path).expanduser().read_bytes()
+    except OSError as e:
+        raise Invalid(f"can't read key {path}: {e.strerror}") from None
     if len(raw) != 32:
         raise Invalid(f"{path} is not a raw 32-byte Ed25519 key")
     return Ed25519PrivateKey.from_private_bytes(raw)
@@ -195,35 +208,65 @@ def parse_iso(s):
 
 
 class Posts:
-    """Reads public posts (GitHub issue comments). mirror maps URL -> the API's comment JSON."""
+    """Reads public posts from one repository: outcomes are issue comments, registrations merged pull
+    requests. mirror maps URL -> the API JSON: for a comment {created_at, updated_at, issue_url, body},
+    for a pull request {merged, merged_at, base_ref, files: [{filename, status}], content}."""
 
-    def __init__(self, mirror=None, fetch=None):
-        self.mirror, self.fetch = mirror, fetch or self._api
+    def __init__(self, mirror=None, fetch=None, registry=REGISTRY):
+        self.mirror, self.fetch, self.registry = mirror, fetch or self._api, registry
 
     @staticmethod
-    def _api(url):
-        owner, repo, _, cid = COMMENT_URL.match(url).groups()
-        req = urllib.request.Request(f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{cid}",
-                                     headers={"Accept": "application/vnd.github+json"})
+    def _get(url, raw=False):
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github.raw" if raw
+                                                   else "application/vnd.github+json"})
         if os.environ.get("GITHUB_TOKEN"):
             req.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
         with urllib.request.urlopen(req, timeout=30) as f:
-            return json.loads(f.read())
+            data = f.read()
+        return data.decode() if raw else json.loads(data)
 
-    def get(self, url):
-        """Return (envelope, post time). Only an unedited issue comment counts as published."""
-        m = COMMENT_URL.match(url or "")
-        if not m:
-            raise Invalid(f"{url!r} is not a GitHub issue comment URL")
+    @classmethod
+    def _api(cls, url):
+        api = "https://api.github.com/repos"
+        if m := COMMENT_URL.match(url):
+            return cls._get(f"{api}/{m[1]}/{m[2]}/issues/comments/{m[4]}")
+        m = PULL_URL.match(url)
+        pr = cls._get(f"{api}/{m[1]}/{m[2]}/pulls/{m[3]}")
+        files, page = [], 1
+        while True:
+            batch = cls._get(f"{api}/{m[1]}/{m[2]}/pulls/{m[3]}/files?per_page=100&page={page}")
+            files += [{"filename": f["filename"], "status": f["status"]} for f in batch]
+            if len(batch) < 100:
+                break
+            page += 1
+        out = {"merged": pr.get("merged"), "merged_at": pr.get("merged_at"),
+               "base_ref": pr.get("base", {}).get("ref"), "files": files, "content": None}
+        added = [f["filename"] for f in files if f["filename"].startswith("checkers/")]
+        if pr.get("merged") and len(added) == 1:
+            out["content"] = cls._get(f"{api}/{m[1]}/{m[2]}/contents/{added[0]}?ref={pr['merge_commit_sha']}", raw=True)
+        return out
+
+    def _read(self, url):
         if self.mirror is not None:
             if url not in self.mirror:
                 raise Invalid(f"{url} is not in the posts mirror")
-            c = self.mirror[url]
-        else:
-            try:
-                c = self.fetch(url)
-            except Exception as e:
-                raise Invalid(f"could not read {url}: {e}") from None
+            return self.mirror[url]
+        try:
+            return self.fetch(url)
+        except Exception as e:
+            raise Invalid(f"could not read {url}: {e}") from None
+
+    def _in_registry(self, m, url):
+        if f"{m[1]}/{m[2]}".lower() != self.registry.lower():
+            raise Invalid(f"{url} is not in {self.registry}")
+
+    def get(self, url):
+        """Return (envelope, post time) of an outcome. Only an unedited issue comment counts."""
+        m = COMMENT_URL.match(url or "")
+        if not m:
+            raise Invalid(f"{url!r} is not a GitHub issue comment URL")
+        self._in_registry(m, url)
+        c = self._read(url)
         if not str(c.get("issue_url", "")).endswith(f"/repos/{m[1]}/{m[2]}/issues/{m[3]}") and "issue_url" in c:
             raise Invalid(f"{url}: comment belongs to another issue")
         created = parse_iso(c.get("created_at"))
@@ -231,6 +274,33 @@ class Posts:
             # created_at survives edits, so an edited comment could carry an envelope chosen after its rounds
             raise Invalid(f"{url} was edited after it was posted; post a new comment instead")
         return extract(c.get("body") or "", url), created
+
+    def registration(self, url):
+        """Return (envelope, merged_at) of a registration: a merged pull request into the registry's
+        main branch that adds exactly one file, checkers/<key_fp>.json, and changes nothing else."""
+        m = PULL_URL.match(url or "")
+        if not m:
+            raise Invalid(f"{url!r} is not a GitHub pull request URL; registrations are merged pull requests")
+        self._in_registry(m, url)
+        pr = self._read(url)
+        if pr.get("merged") is not True or not pr.get("merged_at"):
+            raise Invalid(f"{url} is not merged")
+        if pr.get("base_ref") != REGISTRY_BRANCH:
+            raise Invalid(f"{url} was merged into {pr.get('base_ref')!r}, not {REGISTRY_BRANCH}")
+        files = pr.get("files") or []
+        if len(files) != 1 or files[0].get("status") != "added" \
+                or not re.fullmatch(r"checkers/[0-9a-f]{64}\.json", str(files[0].get("filename"))):
+            raise Invalid(f"{url} must add exactly one file, checkers/<key_fp>.json, and change nothing else")
+        try:
+            env = json.loads(pr.get("content") or "")
+        except ValueError:
+            raise Invalid(f"{url}: the registration file is not JSON") from None
+        sigs = env.get("signatures") if isinstance(env, dict) else None
+        if not isinstance(sigs, list) or len(sigs) != 1 or not isinstance(sigs[0], dict):
+            raise Invalid(f"{url}: the registration file is not one single-signature DSSE envelope")
+        if sigs[0].get("keyid") != files[0]["filename"][len("checkers/"):-len(".json")]:
+            raise Invalid(f"{url}: the file name is not the key_fp of the one key that signed it")
+        return env, parse_iso(pr["merged_at"])
 
 
 def extract(body, where):
@@ -277,7 +347,7 @@ def select(seed, n, k):
 class Registration:
     def __init__(self, url, posts, release, anchor_time):
         self.url = url
-        env, self.time = posts.get(url)
+        env, self.time = posts.registration(url)
         claimed = unverified_payload(env)
         pk = claimed.get("public_key") if isinstance(claimed, dict) else None
         if not isinstance(pk, str) or not re.fullmatch(r"[0-9a-f]{64}", pk):
@@ -297,7 +367,7 @@ class Registration:
             if type(body[f]) is not int or not 1 <= body[f] <= hi:
                 raise Invalid(f"registration {f} must be an integer in 1..{hi}")
         if not self.time > anchor_time:  # R2: after the anchor, so the training was committed first
-            raise Invalid(f"registration posted {iso(self.time)}, not after the anchor time {iso(anchor_time)}")
+            raise Invalid(f"registration merged {iso(self.time)}, not after the anchor time {iso(anchor_time)}")
         self.body, self.sha256, self.release, self.n = body, envelope_id(env), release, n
         self.key_fp, self.public_key, self.k, self.m = body["key_fp"], pk, body["k"], body["m"]
         self.R0 = beacon.next_round(self.time)  # R3
@@ -363,7 +433,7 @@ def results_from_report(line, segments, outcome=None):
 
 
 def verify(url, posts, release, anchor_time, rounds=None):
-    """Check one published outcome (§ Step 4 of docs/receipts.md). Returns its predicate or raises Invalid."""
+    """Check one published outcome (the steps in docs/design/check-receipts.md). Returns its predicate or raises Invalid."""
     env, posted = posts.get(url)
     claimed = unverified_payload(env)
     p = claimed.get("predicate") if isinstance(claimed, dict) else None
@@ -413,6 +483,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("keygen"); s.add_argument("--out", required=True)
+    s.add_argument("--allow-in-repo", action="store_true", help="allow writing the key inside a git work tree")
     s = sub.add_parser("register"); s.add_argument("--key", required=True)
     s.add_argument("--k", type=int, default=1); s.add_argument("--m", type=int, default=1)
     s.add_argument("--handle", help="optional GitHub/Discord handle: a claim, not proof of independence")
@@ -421,7 +492,7 @@ def main(argv=None):
         if name == "verify":
             s.add_argument("url", help="GitHub issue comment URL of the outcome")
         else:
-            s.add_argument("--registration", required=True, help="GitHub issue comment URL of the registration")
+            s.add_argument("--registration", required=True, help="URL of the merged pull request that added the registration")
         if name in ("derive", "sign", "abandon"):
             s.add_argument("--j", type=int, required=True)
         if name in ("sign", "abandon"):
@@ -438,7 +509,9 @@ def main(argv=None):
         if s.prog.split()[-1] != "keygen":
             s.add_argument("--anchor", required=True, help="the release's anchor.json (with its .tsr files)")
             s.add_argument("--anchor-time", type=int, help="skip the anchor timestamp check and use this unix time")
-            s.add_argument("--posts", help="JSON mirror of the GitHub comments, instead of the live API")
+            s.add_argument("--posts", help="JSON mirror of the GitHub posts instead of the live API; "
+                           "only as trustworthy as whoever wrote it")
+            s.add_argument("--registry", default=REGISTRY, help="OWNER/REPO where registrations and outcomes live")
             s.add_argument("--rounds", help="JSON {round: signature} of drand rounds, instead of fetching")
     a = p.parse_args(argv)
     try:
@@ -454,6 +527,12 @@ def run(a):
         out = Path(a.out).expanduser()
         if out.exists():
             raise Invalid(f"{out} exists; refusing to overwrite a key")
+        repo = next((d for d in out.resolve().parent.parents if (d / ".git").exists()), None)
+        if (out.resolve().parent / ".git").exists():
+            repo = out.resolve().parent
+        if repo is not None and not a.allow_in_repo:
+            raise Invalid(f"{out} is inside the git work tree {repo}; keep private keys out of repositories "
+                          "(--allow-in-repo to override)")
         out.parent.mkdir(parents=True, exist_ok=True)
         key = Ed25519PrivateKey.generate()
         fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # secret: owner-only, never overwritten
@@ -474,8 +553,13 @@ def run(a):
                 "release": release, "k": a.k, "m": a.m,
                 "beacon": {"network": "drand/quicknet", "chain_hash": beacon.CHAIN_HASH}, "handle_claim": a.handle}
         print(json.dumps(seal(key, REGISTRATION_TYPE, body), indent=1))
+        print(f"save this as checkers/{body['key_fp']}.json and open a pull request that adds only that file",
+              file=sys.stderr)
         return 0
-    posts = Posts(json.loads(Path(a.posts).read_text()) if a.posts else None)
+    if a.posts:
+        print("WARNING: --posts: verifying against a mirror file, not GitHub; the result is only as "
+              "trustworthy as whoever wrote the mirror", file=sys.stderr)
+    posts = Posts(json.loads(Path(a.posts).read_text()) if a.posts else None, registry=a.registry)
     rounds = json.loads(Path(a.rounds).read_text()) if a.rounds else None
 
     def signature(r):
@@ -490,7 +574,7 @@ def run(a):
 
     if a.cmd == "verify":
         out = verify(a.url, posts, release, anchor_time, rounds)
-        print(json.dumps({"verdict": "VALID", "key_fp": out["_key_fp"], "j": out["challenge"]["j"],
+        print(json.dumps({"verdict": "VALID", "source": "mirror" if a.posts else "github", "key_fp": out["_key_fp"], "j": out["challenge"]["j"],
                           "m": out["challenge"]["m"], "round": out["challenge"]["round"], "results": out["results"]}))
         return 0
     reg = Registration(a.registration, posts, release, anchor_time)

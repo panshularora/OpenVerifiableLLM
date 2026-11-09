@@ -2,7 +2,8 @@
 
 Offline: drand rounds are real quicknet rounds recorded in fixtures/drand_quicknet_rounds.json, the
 release anchors are the published main-run and exclusion-fork anchor.json files, and GitHub comments
-come from an in-memory mirror with the API's {created_at, updated_at, body} fields.
+come from an in-memory mirror shaped like the API's JSON: merged pull requests for registrations,
+issue comments for outcomes.
 """
 import base64
 import calendar
@@ -32,6 +33,7 @@ MAIN_TIME = calendar.timegm((2026, 10, 20, 14, 38, 43))  # both TSAs on the main
 FORK_TIME = calendar.timegm((2026, 10, 31, 14, 28, 0))   # both TSAs on the fork anchor
 REG_TIME = "2026-11-09T08:30:00Z"
 REPO = "https://github.com/AOSSIE-Org/OpenVerifiableLLM/issues/9999#issuecomment-"
+PULL = "https://github.com/AOSSIE-Org/OpenVerifiableLLM/pull/"
 
 
 def resign(env, key, change):
@@ -73,13 +75,29 @@ class World:
         self.posts[url] = {"created_at": when, "updated_at": edited or when,
                            "issue_url": "https://api.github.com/repos/AOSSIE-Org/OpenVerifiableLLM/issues/9999",
                            "body": "Check receipt\n\n```json\n" + json.dumps(env, indent=1) + "\n```\n"}
-        (self.tmp / "posts.json").write_text(json.dumps(self.posts))
+        self.save()
         return url
 
-    def register(self, keypath, k=1, m=3, when=REG_TIME):
+    def save(self):
+        (self.tmp / "posts.json").write_text(json.dumps(self.posts))
+
+    def merge(self, env, when, **change):
+        """A pull request adding checkers/<keyid>.json, merged into main at `when`."""
+        self.n += 1
+        url = f"{PULL}{self.n}"
+        name = f"checkers/{env['signatures'][0]['keyid']}.json"
+        self.posts[url] = {"merged": True, "merged_at": when, "base_ref": "main",
+                           "files": [{"filename": name, "status": "added"}], "content": json.dumps(env, indent=1)} | change
+        self.save()
+        return url
+
+    def registration_envelope(self, keypath, k=1, m=3):
         code, out, err = self.cli("register", "--key", keypath, "--k", k, "--m", m, *self.common()[:4])
         assert code == 0, err
-        return self.post(json.loads(out), when)
+        return json.loads(out)
+
+    def register(self, keypath, k=1, m=3, when=REG_TIME):
+        return self.merge(self.registration_envelope(keypath, k, m), when)
 
     def report(self, segments, match=True):
         path = self.tmp / "local-verifications.jsonl"
@@ -179,6 +197,24 @@ class TestReceipts(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("refusing", err)
 
+    def test_keygen_refuses_a_git_work_tree(self):
+        repo = self.w.tmp / "repo"
+        (repo / ".git").mkdir(parents=True)
+        for out in (repo / "a.key", repo / "keys" / "a.key"):
+            code, _, err = self.w.cli("keygen", "--out", out)
+            self.assertEqual(code, 1)
+            self.assertIn("git work tree", err)
+            self.assertFalse(out.exists())
+        code, _, _ = self.w.cli("keygen", "--out", repo / "a.key", "--allow-in-repo")
+        self.assertEqual(code, 0)
+
+    def test_missing_key_file_fails_cleanly(self):
+        rep = self.w.report(self.w.derive(self.reg, 1))
+        code, _, err = self.w.cli("sign", "--registration", self.reg, "--j", 1, "--key", self.w.tmp / "nope.key",
+                                  "--report", rep, *self.w.common())
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL: can't read key", err)
+
     def test_schedule_is_registration_round_plus_j(self):
         code, out, _ = self.w.cli("schedule", "--registration", self.reg, *self.w.common())
         s = json.loads(out)
@@ -220,10 +256,16 @@ class TestReceipts(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("not the registered key", err)
 
+    def schedule_fails(self, reg, text):
+        code, _, err = self.w.cli("schedule", "--registration", reg, *self.w.common())
+        self.assertEqual(code, 1)
+        self.assertIn(text, err)
+
     def test_registration_signed_by_another_key_fails(self):
         _, other = self.w.key("b")
-        env, _ = receipt.Posts(self.w.posts).get(self.reg)
-        reg2 = self.w.post(resign(env, other, lambda b: None), REG_TIME)
+        env, _ = receipt.Posts(self.w.posts).registration(self.reg)
+        forged = resign(env, other, lambda b: None)  # other key signs a body naming key a
+        reg2 = self.w.merge(forged, REG_TIME)
         code, _, err = self.w.cli("schedule", "--registration", reg2, *self.w.common())
         self.assertEqual(code, 1)
         self.assertIn("keyid", err)
@@ -244,12 +286,69 @@ class TestReceipts(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("different release", err)
 
-    def test_edited_registration_fails(self):
-        env, _ = receipt.Posts(self.w.posts).get(self.reg)
-        reg2 = self.w.post(env, REG_TIME, edited="2026-11-09T10:00:00Z")
-        code, _, err = self.w.cli("schedule", "--registration", reg2, *self.w.common())
-        self.assertEqual(code, 1)
-        self.assertIn("edited", err)
+    def test_registration_as_an_issue_comment_fails(self):
+        # a comment can be deleted after its draws are known and posted again: the grinding hole
+        env, _ = receipt.Posts(self.w.posts).registration(self.reg)
+        self.schedule_fails(self.w.post(env, REG_TIME), "not a GitHub pull request URL")
+
+    def test_unmerged_or_off_main_registration_fails(self):
+        env = self.w.registration_envelope(self.keypath)
+        self.schedule_fails(self.w.merge(env, REG_TIME, merged=False, merged_at=None), "is not merged")
+        self.schedule_fails(self.w.merge(env, REG_TIME, base_ref="dev"), "not main")
+
+    def test_registration_pull_request_must_add_only_its_file(self):
+        env = self.w.registration_envelope(self.keypath)
+        name = f"checkers/{env['signatures'][0]['keyid']}.json"
+        for files in ([{"filename": name, "status": "modified"}],
+                      [{"filename": name, "status": "added"}, {"filename": "simple/ovl.py", "status": "modified"}],
+                      [{"filename": "checkers/" + "0" * 64 + ".json", "status": "added"}],
+                      [{"filename": "keys/a.json", "status": "added"}], []):
+            code, _, err = self.w.cli("schedule", "--registration", self.w.merge(env, REG_TIME, files=files),
+                                      *self.w.common())
+            self.assertEqual(code, 1)
+            self.assertRegex(err, "checkers/|not the key_fp")
+
+    def test_registration_file_named_for_another_key_fails(self):
+        _, other = self.w.key("b")
+        env = self.w.registration_envelope(self.keypath)
+        name = "checkers/" + receipt.fingerprint(receipt.public_hex(other)) + ".json"
+        self.schedule_fails(self.w.merge(env, REG_TIME, files=[{"filename": name, "status": "added"}]),
+                            "not the key_fp")
+
+    def test_registration_content_must_be_one_envelope(self):
+        env = self.w.registration_envelope(self.keypath)
+        for content in ("not json", json.dumps([env]), json.dumps(env | {"signatures": []}), None):
+            self.schedule_fails(self.w.merge(env, REG_TIME, content=content), "registration file")
+
+    def test_registry_repository_is_pinned(self):
+        url = self.reg.replace("AOSSIE-Org/OpenVerifiableLLM", "someone/OpenVerifiableLLM")
+        self.w.posts[url] = self.w.posts[self.reg]
+        self.w.save()
+        self.schedule_fails(url, "is not in AOSSIE-Org/OpenVerifiableLLM")
+        _, env = self.w.outcome(self.reg, self.keypath, 1)
+        u = self.w.post(env, "2026-11-09T09:01:00Z").replace("AOSSIE-Org", "someone")
+        self.w.posts[u] = self.w.posts[f"{REPO}{self.w.n}"]
+        self.w.save()
+        code, _, err = self.w.verify(u)
+        self.assertIn("is not in AOSSIE-Org/OpenVerifiableLLM", err)
+
+    def test_mirror_use_is_flagged(self):
+        u1, _ = self.w.outcome(self.reg, self.keypath, 1)
+        code, out, err = self.w.verify(u1)
+        self.assertEqual(json.loads(out)["source"], "mirror")
+        self.assertIn("only as trustworthy as whoever wrote the mirror", err)
+
+    def test_live_reader_maps_the_github_api(self):
+        env = self.w.registration_envelope(self.keypath)
+        name = f"checkers/{env['signatures'][0]['keyid']}.json"
+        api = "https://api.github.com/repos/AOSSIE-Org/OpenVerifiableLLM"
+        replies = {f"{api}/pulls/7": {"merged": True, "merged_at": REG_TIME, "base": {"ref": "main"},
+                                      "merge_commit_sha": "abc"},
+                   f"{api}/pulls/7/files?per_page=100&page=1": [{"filename": name, "status": "added"}],
+                   f"{api}/contents/{name}?ref=abc": json.dumps(env)}
+        with mock.patch.object(receipt.Posts, "_get", side_effect=lambda u, raw=False: replies[u]):
+            got, t = receipt.Posts().registration(PULL + "7")
+        self.assertEqual((got, t), (env, receipt.parse_iso(REG_TIME)))
 
     def test_registration_k_and_m_bounds(self):
         for k, m in ((0, 1), (38, 1), (1, 0), (1, receipt.MAX_M + 1)):
@@ -352,11 +451,15 @@ class TestReceipts(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("mixed", err)
 
+    def test_edited_outcome_fails(self):
+        _, env = self.w.outcome(self.reg, self.keypath, 1)
+        self.assertFails(self.w.post(env, "2026-11-09T09:01:00Z", edited="2026-11-09T10:00:00Z"), "edited")
+
     def test_two_envelopes_in_one_comment_fail(self):
         _, env = self.w.outcome(self.reg, self.keypath, 1)
         url = self.w.post(env, "2026-11-09T09:01:00Z")
         self.w.posts[url]["body"] += "\n```json\n" + json.dumps(env) + "\n```\n"
-        (self.w.tmp / "posts.json").write_text(json.dumps(self.w.posts))
+        self.w.save()
         self.assertFails(url, "exactly one DSSE envelope")
 
     def test_non_comment_url_fails(self):
@@ -436,6 +539,26 @@ class TestReport(unittest.TestCase):
         out = self.run_report(independent=set())
         self.assertEqual(out["disputes"], list(range(37)))
         self.assertTrue(any("already registered" in r["reason"] for r in out["rejected"]))
+
+    def test_re_registration_after_deleting_the_file_does_not_reset_the_schedule(self):
+        a, _ = self.w.key("a")
+        first = self.w.register(a, m=2)
+        env = json.loads(self.w.posts[first]["content"])
+        name = self.w.posts[first]["files"][0]["filename"]
+        deletion = self.w.merge(env, "2026-11-09T08:30:03Z", files=[{"filename": name, "status": "removed"}])
+        second = self.w.merge(env, "2026-11-09T08:30:06Z")  # same file added again, a later merged_at
+        late, _ = self.w.outcome(second, a, 1, when="2026-11-09T09:00:00Z")
+        out = self.run_report(now=calendar.timegm((2026, 11, 13, 12, 0, 0)))
+        self.assertEqual(len(out["keys"]), 1)
+        self.assertEqual(out["keys"][0]["R0"], ROUNDS["R0"])
+        self.assertEqual([c["status"] for c in out["keys"][0]["checks"]], ["MISSING", "MISSING"])
+        reasons = {r["url"]: r["reason"] for r in out["rejected"]}
+        self.assertIn("checkers/", reasons[deletion])
+        self.assertIn("already registered", reasons[second])
+        self.assertIn("doesn't count", reasons[late])
+
+    def test_report_marks_its_source(self):
+        self.assertEqual(self.run_report()["source"], "mirror")
 
 
 class TestStampDigest(unittest.TestCase):
