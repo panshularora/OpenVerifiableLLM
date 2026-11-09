@@ -228,6 +228,7 @@ class TestReceipts(unittest.TestCase):
             code, out, err = self.w.verify(url)
             self.assertEqual(code, 0, err)
             self.assertEqual({r["outcome"] for r in json.loads(out)["results"]}, {kind})
+            self.assertIn("receipts_report.py", json.loads(out)["first_registration"])
 
     def test_altered_payload_fails_signature(self):
         _, env = self.w.outcome(self.reg, self.keypath, 1, match=False)
