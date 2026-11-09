@@ -351,6 +351,21 @@ class TestReceipts(unittest.TestCase):
             got, t = receipt.Posts().registration(PULL + "7")
         self.assertEqual((got, t), (env, receipt.parse_iso(REG_TIME)))
 
+    def test_live_reader_rejects_a_deleting_or_editing_pull_request_without_a_404(self):
+        # Found in the live smoke test: a merged PR deleting checkers/<key_fp>.json made the reader fetch
+        # the file at the merge commit, where it no longer exists, so the report said "HTTP Error 404"
+        # instead of why the PR doesn't count.
+        name = f"checkers/{'a' * 64}.json"
+        api = "https://api.github.com/repos/AOSSIE-Org/OpenVerifiableLLM"
+        for status in ("removed", "modified"):
+            replies = {f"{api}/pulls/8": {"merged": True, "merged_at": REG_TIME, "base": {"ref": "main"},
+                                          "merge_commit_sha": "def"},
+                       f"{api}/pulls/8/files?per_page=100&page=1": [{"filename": name, "status": status}]}
+            with self.subTest(status=status), \
+                    mock.patch.object(receipt.Posts, "_get", side_effect=lambda u, raw=False, r=replies: r[u]):
+                with self.assertRaisesRegex(receipt.Invalid, "must add exactly one file"):
+                    receipt.Posts().registration(PULL + "8")
+
     def test_registration_k_and_m_bounds(self):
         for k, m in ((0, 1), (38, 1), (1, 0), (1, receipt.MAX_M + 1)):
             code, _, _ = self.w.cli("register", "--key", self.keypath, "--k", k, "--m", m, *self.w.common()[:4])

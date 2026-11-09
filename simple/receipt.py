@@ -241,9 +241,13 @@ class Posts:
             page += 1
         out = {"merged": pr.get("merged"), "merged_at": pr.get("merged_at"),
                "base_ref": pr.get("base", {}).get("ref"), "files": files, "content": None}
-        added = [f["filename"] for f in files if f["filename"].startswith("checkers/")]
-        if pr.get("merged") and len(added) == 1:
-            out["content"] = cls._get(f"{api}/{m[1]}/{m[2]}/contents/{added[0]}?ref={pr['merge_commit_sha']}", raw=True)
+        # Fetch the file only for a pull request that could count: one file, added. A pull request that
+        # deletes or edits a registration has nothing to read at the merge commit (a deleted file is a 404),
+        # and registration() rejects it with the right reason.
+        if pr.get("merged") and len(files) == 1 and files[0]["status"] == "added" \
+                and files[0]["filename"].startswith("checkers/"):
+            out["content"] = cls._get(f"{api}/{m[1]}/{m[2]}/contents/{files[0]['filename']}"
+                                      f"?ref={pr['merge_commit_sha']}", raw=True)
         return out
 
     def _read(self, url):
