@@ -135,6 +135,32 @@ class TestCampaign(unittest.TestCase):
                          (1, 1, 1, 2, 1))
         self.assertIn("not recomputed", campaign.render(out))
 
+    def test_headline_names_independent_drop_outs(self):
+        rep = report([key(fp("a"), ["MATCH"] * 10 + ["ABANDONED", "MISSING", "PENDING"]),
+                      key(fp("b"), ["MATCH", "ABANDONED", "ERROR"])])
+        out = campaign.campaign(rep, {fp("a"): "independent", fp("b"): "contributor"})
+        b = out["bound_independent"]
+        self.assertEqual((b["f_max"], b["dropped"]), (9, 2))  # b's drop-outs are not independent; PENDING isn't one
+        self.assertEqual(b["dropped_by_status"], {"abandoned": 1, "missing": 1, "incomplete": 0})
+        self.assertIn("at most 9 of 37 segments (24.3%) forged at 95% confidence, from 10 independent MATCH "
+                      "checks; assumes the 2 abandoned, missing or incomplete independent checks (1 abandoned, "
+                      "1 missing, 0 incomplete) were unrelated to their drawn segments", out["headline"])
+        self.assertIn("a drop-out can hide a forged one", out["headline"])
+        line = next(x for x in campaign.render(out).splitlines() if x.startswith("bound (independent"))
+        self.assertIn("assumes the 2 abandoned, missing or incomplete", line)  # on the headline line itself
+
+    def test_headline_counts_incomplete_and_singular(self):
+        rep = report([key(fp("a"), ["MATCH", "WRONG_STACK"])])
+        out = campaign.campaign(rep, {fp("a"): "independent"})
+        self.assertEqual(out["bound_independent"]["dropped"], 1)
+        self.assertIn("the 1 abandoned, missing or incomplete independent check (0 abandoned, 0 missing, "
+                      "1 incomplete) were", out["headline"])
+
+    def test_headline_without_drop_outs_says_so(self):
+        out = campaign.campaign(report([key(fp("a"), ["MATCH"] * 3)]), {fp("a"): "independent"})
+        self.assertEqual(out["bound_independent"]["dropped"], 0)
+        self.assertIn("no independent check was abandoned, missing or incomplete", out["headline"])
+
     def test_unclassified_keys_are_listed_and_count_nowhere(self):
         rep = report([key(fp("a"), ["MATCH"] * 4), key(fp("d"), ["MATCH"] * 4)])
         out = campaign.campaign(rep, {fp("a"): "independent"})

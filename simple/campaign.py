@@ -11,8 +11,9 @@ The bound: if F of the N segments were forged, the chance that every counted che
 is prod_i C(N-F, k_i) / C(N, k_i), where check i drew k_i segments uniformly without replacement.
 F_max is the largest F for which that chance is still above alpha, so "at most F_max of N segments
 forged at 1-alpha confidence". It assumes the forger fixed the forged segments before the draws
-existed (registration after the anchor), and that abandoned or missing checks are unrelated to which
-segment was drawn. Any MISMATCH makes the campaign DISPUTED; CLEAN only means no MISMATCH was reported.
+existed (registration after the anchor), and that abandoned, missing or incomplete checks are unrelated
+to which segment was drawn. A checker sees its segment before running, so a drop-out can hide a forged
+segment; the headline names how many independent checks dropped out. Any MISMATCH makes the campaign DISPUTED; CLEAN only means no MISMATCH was reported.
 
   python simple/campaign.py REPORT.json --classes classes.json [--author KEY_FP ...] [--alpha 0.05] [--json]
 
@@ -221,13 +222,21 @@ def campaign(rep, classes, alpha=0.05, authors=()):
     table = [{"class": c, **r, "covered": len(r["covered"])} for c, r in rows.items()]
     table.append({"class": "overall", **overall, "covered": len(overall["covered"])})
     head = bound(n, ks["independent"], alpha)
+    dropped = [f for f in follow_up if f["class"] == "independent"]
+    head["dropped"] = len(dropped)  # abandoned, missing or incomplete independent checks
+    head["dropped_by_status"] = {s: sum(1 for f in dropped if kind(f["status"]) == s)
+                                 for s in ("abandoned", "missing", "incomplete")}
+    caveat = (f"assumes the {len(dropped)} abandoned, missing or incomplete independent "
+              f"check{'' if len(dropped) == 1 else 's'} ({', '.join(f'{v} {s}' for s, v in head['dropped_by_status'].items())}) "
+              "were unrelated to their drawn segments; a checker sees its segment before running, so a drop-out "
+              "can hide a forged one" if dropped else "no independent check was abandoned, missing or incomplete")
     return {"status": "DISPUTED" if disputes or rep["disputes"] else "CLEAN", "source": rep["source"],
             "segments": n, "alpha": alpha, "table": table, "disputes": disputes,
             "disputed_segments": rep["disputes"], "follow_up": follow_up, "unclassified": unclassified,
             "rejected_posts": len(rep["rejected"]), "notes": notes,
             "bound_independent": head, "bound_all_classes": bound(n, ks["classified"], alpha),
             "headline": f"at most {head['f_max']} of {n} segments ({100 * head['f_max'] / n:.1f}%) forged at "
-                        f"{100 * (1 - alpha):g}% confidence, from {head['checks']} independent MATCH checks"}
+                        f"{100 * (1 - alpha):g}% confidence, from {head['checks']} independent MATCH checks; {caveat}"}
 
 
 def render(out):
@@ -251,7 +260,8 @@ def render(out):
               f"P(catch 1 forged segment) {100 * b['p_detect_one_forged']:.1f}% from {b['draws']} draws",
               f"all classes, NOT an independence claim (includes project and contributor checks): at most "
               f"{a['f_max']} of {out['segments']} ({100 * a['f_max_fraction']:.1f}%) from {a['checks']} MATCH checks",
-              "assumes abandoned and missing checks are unrelated to which segment was drawn"]
+              "the all-classes figure also assumes every abandoned, missing or incomplete check is unrelated "
+              "to which segment was drawn"]
     if out["follow_up"]:
         lines.append("follow-up targets (abandoned, missing or incomplete checks):")
         lines += [f"  {f['key_fp'][:12]} ({f['class']}) check {f['j']} round {f['round']}: {f['status']}, segments "
