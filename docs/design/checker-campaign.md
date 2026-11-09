@@ -50,8 +50,9 @@ A JSON object mapping each `key_fp` to `project`, `contributor` or `independent`
 2. A table per class and overall: keys, checks declared (`m`), completed MATCH checks, MATCH draws,
    distinct segments covered by MATCH, mismatches, abandoned, missing, incomplete (WRONG_STACK, ERROR,
    or a mix of outcomes without MISMATCH) and pending.
-3. The bound from independent checks only, and an all-classes figure labelled as not an independence
-   claim.
+3. The bound from independent checks only, with the number of independent checks that were
+   abandoned, missing or incomplete on the same line, and an all-classes figure labelled as not an
+   independence claim.
 4. Follow-up targets: every abandoned, missing or incomplete check, with the segments it drew. Anyone
    can recheck those segments. If the report was made without beacon rounds, missing checks have no
    segments yet and the table says so.
@@ -75,6 +76,23 @@ of `N` segments (x%) forged at 95% confidence". Only checks whose outcome is exa
 arithmetic is exact (fractions, not floats). It also prints the with-replacement approximation
 `1 - alpha^(1/sum k_i)` and the chance of catching one forged segment, `1 - miss(1)`.
 
+The headline line itself names the independent checks that dropped out, for example:
+
+```text
+at most 9 of 37 segments (24.3%) forged at 95% confidence, from 10 independent MATCH checks; assumes
+the 2 abandoned, missing or incomplete independent checks (1 abandoned, 1 missing, 0 incomplete) were
+unrelated to their drawn segments; a checker sees its segment before running, so a drop-out can hide a
+forged one
+```
+
+This caveat sits on the headline on purpose. A checker learns which segment was drawn before running
+it, so a checker who finds (or knows) that segment is forged can simply not report it, and the bound
+above never sees that draw. The bound is only as good as the assumption that drop-outs are unrelated
+to the drawn segment; the count says how much rests on it, and each dropped check is in the follow-up
+list with its segments so anyone can recheck them. The JSON has the same count as
+`bound_independent.dropped` and `bound_independent.dropped_by_status`. With no drop-outs the headline
+says so.
+
 For the released run, `N = 37`, with single-segment checks:
 
 | independent MATCH draws | F_max at 95% | continuous approximation | P(catch 1 forged) |
@@ -92,8 +110,9 @@ are small on purpose: they say what a handful of checks does and does not show.
 
 - The forged segments were fixed before the draws existed. The receipts rules give this: the
   registration is merged after the release anchor, and each round is fixed at registration.
-- Abandoned and missing checks are unrelated to which segment was drawn. If a checker abandons a check
-  because its segment came out MISMATCH, the bound is wrong. That is why every abandoned and missing
+- Abandoned, missing and incomplete checks are unrelated to which segment was drawn. A checker sees
+  the segment before running it; if a checker abandons a check because its segment is forged or came
+  out MISMATCH, the bound is wrong. The headline states how many independent checks this covers. That is why every abandoned and missing
   check is listed as a follow-up target with its segments: rechecking them is how a reader tests this
   assumption instead of taking it on trust.
 - The keys classed independent really are independent of the project and of each other. Two keys held
