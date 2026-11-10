@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import random
 import sys
 import tempfile
 import unittest
@@ -202,6 +203,34 @@ class CoverageTests(unittest.TestCase):
         c = {"phase": "conversation", "global_step": 0, "cursor": 10, "exclude": {"wikipedia": [[12, 3]]}}
         with self.assertRaisesRegex(SystemExit, "coverage error"):
             ovl.step(self.model, self.opt, self.batch([10, 11, 15, 16]), c)
+
+    def test_expected_ids_matches_per_id_walk(self):
+        def slow_walk(cursor, ranges, count):
+            out = []
+            for _ in range(count):
+                cursor = ovl.next_target(cursor, ranges)
+                out.append(cursor)
+                cursor += 1
+            return out
+
+        rng = random.Random(0)
+        for _ in range(500):
+            ranges, s = [], rng.randrange(0, 50)
+            for _ in range(rng.randrange(0, 6)):
+                n = rng.randrange(1, 20)
+                ranges.append((s, n))
+                s += n + rng.randrange(-5, 30)  # overlapping and back-to-back ranges
+            ranges = sorted(ranges)
+            cursor, count = rng.randrange(0, 80), rng.randrange(1, 120)
+            self.assertEqual(ovl.expected_ids(cursor, ranges, count).tolist(),
+                             slow_walk(cursor, ranges, count))
+
+    def test_expected_ids_no_ranges_is_arange(self):
+        self.assertTrue(torch.equal(ovl.expected_ids(5, [], 4), torch.arange(5, 9)))
+
+    def test_expected_ids_skips_range_at_cursor(self):
+        # cursor inside a range starts after it
+        self.assertEqual(ovl.expected_ids(10, [(8, 5)], 4).tolist(), [13, 14, 15, 16])
 
 
 class WeightsMatchTests(unittest.TestCase):

@@ -301,17 +301,39 @@ def next_target(cursor, ranges):
     return cursor
 
 
+def expected_ids(cursor, ranges, count):
+    """Exact target-id sequence of `count` steps from cursor, skipping excluded ranges.
+
+    Same result as calling next_target once per id. ranges are sorted by start (as
+    excluded() returns them). Overlapping and back-to-back ranges behave as in next_target.
+    """
+    cursor = next_target(cursor, ranges)
+    parts, left = [], count
+    for s, n in ranges:
+        if left == 0:
+            break
+        if s + n <= cursor:          # range already passed
+            continue
+        if s > cursor:               # a run of plain ids before this range
+            take = min(left, s - cursor)
+            parts.append(torch.arange(cursor, cursor + take))
+            left -= take
+            cursor += take
+            if left == 0:
+                break
+        cursor = next_target(cursor, ranges)  # jump over this range (and any that chain onto it)
+    if left:
+        parts.append(torch.arange(cursor, cursor + left))
+    return torch.cat(parts) if parts else torch.empty(0, dtype=torch.int64)
+
+
 def step(model, opt, b, ctl):
     ids = b["target_ids"][b["mask"]]
     ranges = excluded(ctl)
-    expected, cursor = [], ctl["cursor"]
-    for _ in range(ids.numel()):  # the exact id sequence: consecutive, skipping each excluded range
-        cursor = next_target(cursor, ranges)
-        expected.append(cursor)
-        cursor += 1
-    if ids.numel() == 0 or ids.tolist() != expected:
+    want = expected_ids(ctl["cursor"], ranges, ids.numel())
+    if ids.numel() == 0 or not torch.equal(ids, want):
         raise SystemExit(f"coverage error at cursor {ctl['cursor']}")  # gap, repeat or reorder
-    last = expected[-1]
+    last = int(want[-1])
     for g in opt.param_groups:
         g["lr"] = learning_rate(ctl)
     x, y, m = (b[k].to(DEV, non_blocking=True) for k in ("inputs", "targets", "mask"))
