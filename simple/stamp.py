@@ -118,7 +118,12 @@ def main():
     p.add_argument("run"); p.add_argument("--check", action="store_true")
     a = p.parse_args()
     path = Path(a.run) / "chain.jsonl"
-    chain = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines()]
+    chain = []
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        try:
+            chain.append(json.loads(line))
+        except json.JSONDecodeError as err:
+            sys.exit(f"{path}: line {n} is not valid JSON ({err.msg}); the file is cut off or damaged")
     if a.check and not chain:
         print(f"{path} has no entries; nothing to check")
         sys.exit(1)

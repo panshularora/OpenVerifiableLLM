@@ -32,6 +32,15 @@ class StampCheckTests(unittest.TestCase):
             self.assertIn("no entries", out)
             self.assertNotIn("Traceback", out)
 
+    def test_check_on_bad_json_line_reports_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "chain.jsonl").write_text('{"index": 0}\nnot-json\n')
+            r = run_stamp(d, ["--check"])
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("line 2", r.stderr)
+            self.assertNotIn("Traceback", r.stdout + r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
